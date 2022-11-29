@@ -1,16 +1,19 @@
-TERRARUST is a set of ergonomic tools for building Terraform configs from Rust. This is an alternative to the CDK.
+Terrars is a set of ergonomic tools for building Terraform configs from Rust. This is an alternative to the CDK.
 
 Benefits
 
-- One language: If you're already using Rust, why deal with Node.js and other languages for deploys?
-- Type safety, including resource property references
-- _You_ control TERRARUST
+- One language - If you're already using Rust, why deal with Node.js and other languages for deploys?
+- Type safety - including resource property references
+- Fewer layers - just your code and Terraform
+- Generate code for only the resources you need
+
+Current status: Usable, but may have some rough edges and missing features. Let me know if you encounter issues.
 
 # What it is
 
-TERRARUST is a library with some data structures for describing and serializing Terraform stacks. `Stack` is the root data type.
+Terrars is a library with some data structures for describing and serializing Terraform stacks. `Stack` is the root data type.
 
-TERRARUST also provides a command, `terrarust-generate`, which generates Rust code for provider-specific types. In the current directory, it creates a module for each provider you specify.
+Terrars also provides a command, `terrars-generate`, which generates Rust code for provider-specific types. In the current directory, it creates a module for each provider you specify.
 
 # Usage
 
@@ -18,38 +21,58 @@ TERRARUST also provides a command, `terrarust-generate`, which generates Rust co
 
    You need to have `terraform` and `rustfmt` installed and on your path.
 
-   Run `cargo install terrarust`, then `terrarust-generate andrewbaxter/stripe:0.0.14` (or whatever the latest version is).
+   Run `cargo install terrars`, then `terrars-generate andrewbaxter/stripe 0.0.14` (or whatever the latest version is).
 
    Copy `stripe/` into your project source tree somewhere and add `pub mod stripe` to the parent module.
 
 2. Develop your code
 
-   Create a `Stack` and set up the provider type and provider:
+   Create a `Stack` and set up provider types and provider:
 
-   ```
-   let stack = BuildStack {
-     state_path: PathBuf::from_str("mystack.tfstate").unwrap(),
+   ```rust
+   let mut stack = BuildStack {
+       state_path: PathBuf::from_str("mystack.tfstate").unwrap(),
    }::build();
-   let pt = provider_type_stripe(&stack);
+   let pt = provider_type_stripe(stack);
    BuildProviderStripe {
-     provider_type: pt,
-     token: STRIPE_TOKEN,
+       provider_type: pt,
+       token: STRIPE_TOKEN,
    }.build(&stack);
    ```
 
    Then create resources:
 
-   ```
+   ```rust
    let my_product = BuildProduct {
-     name: "My Product".into(),
+       name: "My Product".into(),
    }.build(&stack);
    ...
    ```
 
    Finally, write the stack out:
 
-   ```
+   ```rust
    fs::write("mystack.tf.json", stack.serialize())?;
    ```
 
 3. Call `terraform` on your stack as usual
+
+# Limitations
+
+- Limited name sanitization
+
+  If a provider field or resource name clashes with a rust keyword or metavalue name things may fail to compile.
+
+- Not all Terraform features have been implemented
+
+  The only ones I'm aware of missing at the moment are resource "provisioning" and for-each/count.
+
+- References for collection types are not implemented
+
+  I don't know if those are generally valid in the first place, outside of for-each/count.
+
+- `ignore_changes` takes strings rather than an enum
+
+- No variable or output static type checking
+
+  I'd like to add a derive macro for generating variables/outputs automatically from a structure at some point.
