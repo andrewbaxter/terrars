@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 #[inline(always)]
 pub fn err_stop<R, F: FnOnce() -> Result<R>>(f: F) -> Result<R> {
@@ -8,6 +8,6 @@ pub fn err_stop<R, F: FnOnce() -> Result<R>>(f: F) -> Result<R> {
 #[macro_export]
 macro_rules! es {
     ($b:expr) => {
-        $crate::errextra::err_stop(|| $b)
+        $crate::generatelib::errextra::err_stop(|| $b)
     };
 }

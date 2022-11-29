@@ -1,0 +1,669 @@
+use anyhow::{anyhow, Context, Result};
+use clap::Parser;
+use once_cell::sync::Lazy;
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
+use serde_json::{json, Value};
+use sloggers::{
+    terminal::{Destination, TerminalLoggerBuilder},
+    types::Severity,
+    Build,
+};
+use std::{
+    collections::BTreeMap,
+    fs::{self, create_dir_all, File},
+    io::Write,
+    path::{Path, PathBuf},
+    process::Command,
+    str::FromStr,
+};
+use structre::structre;
+
+use crate::generatelib::sourceschema::{
+    self, AggCollType, AggCollTypeKey, AggObjType, ProviderSchemas, ScalarTypeKey, ValueSchema,
+};
+
+pub mod generatelib;
+
+pub trait CollCommand {
+    fn run(&mut self) -> Result<()>;
+}
+
+impl CollCommand for Command {
+    fn run(&mut self) -> Result<()> {
+        match match self.output() {
+            Ok(o) => {
+                if o.status.success() {
+                    Ok(())
+                } else {
+                    Err(anyhow!("Exit code indicated error: {:?}", o))
+                }
+            }
+            Err(e) => Err(e.into()),
+        } {
+            Ok(()) => Ok(()),
+            Err(e) => Err(anyhow!("Failed to run {:?}", &self).context(e)),
+        }
+    }
+}
+
+#[derive(Clone)]
+#[structre("^(?P<name>[^:]+):(?P<version>.*)$")]
+struct ProviderVersion {
+    pub name: String,
+    pub version: String,
+}
+
+impl FromStr for ProviderVersion {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        static RE: Lazy<ProviderVersionFromRegex> = Lazy::new(|| ProviderVersionFromRegex::new());
+        Ok(RE.parse(s)?)
+    }
+}
+
+#[derive(Parser)]
+struct Arguments {
+    #[arg(help = "List of providers with versions, like aws:4.0.999 or thirdparty/provider:1.0.0")]
+    providers: Vec<ProviderVersion>,
+}
+
+fn main() {
+    let mut builder = TerminalLoggerBuilder::new();
+    builder.level(Severity::Debug);
+    builder.destination(Destination::Stderr);
+    let root_log = builder.build().unwrap();
+    match es!({
+        let args = Arguments::parse();
+
+        let dir = tempfile::tempdir()?;
+        fs::write(
+                dir.path().join("providers.tf.json"),
+                &serde_json::to_vec(&json!({
+                    "terraform": {
+                        "required_providers": serde_json::to_value(
+                            &args.providers.iter().map(|p|
+                                (p.name.splitn(2,"/").next().unwrap().to_string(), json!({"source": p.name,
+                                "version": p.version}))).collect::<BTreeMap<String, Value>>())?
+                    }
+                }))
+                .unwrap(),
+            ).context("Failed to write bootstrap terraform code for provider schema extraction")?;
+        Command::new("terraform")
+            .arg("init")
+            .current_dir(&dir)
+            .run()
+            .context("Error initializing terraform in export dir")?;
+        let schema_raw = Command::new("terraform")
+            .args(&["providers", "schema", "-json"])
+            .current_dir(&dir)
+            .output()
+            .context("Error outputting terraform provider schema")?
+            .stdout;
+        fs::write("dump.json", &schema_raw)?;
+        let schema: ProviderSchemas = serde_json::from_slice(&schema_raw)
+            .context("Error parsing provider schema json from terraform")?;
+
+        // Generate
+        fn write_file(path: &Path, contents: Vec<TokenStream>) -> Result<()> {
+            match es!({
+                File::create(&path)
+                    .context("Failed to create rust file")?
+                    .write_all(quote!(#(#contents)*).to_string().as_bytes())
+                    .context("Failed to write rust file")?;
+                Command::new("rustfmt")
+                    .args(&["--config", "error_on_line_overflow=false"])
+                    .arg(&path)
+                    .run()
+                    .context("Error formatting generated rust code")?;
+                Ok(())
+            }) {
+                Ok(_) => {}
+                Err(e) => Err(e).with_context(|| {
+                    format!(
+                        "Failed to write generated code to {}",
+                        path.to_string_lossy()
+                    )
+                })?,
+            }
+            Ok(())
+        }
+
+        fn generate_simple_type(t: &ScalarTypeKey) -> TokenStream {
+            let ident = match t {
+                ScalarTypeKey::Number => format_ident!("f64"),
+                ScalarTypeKey::Integer => format_ident!("i64"),
+                ScalarTypeKey::String => format_ident!("String"),
+                ScalarTypeKey::Bool => format_ident!("bool"),
+            };
+            quote!(#ident)
+        }
+
+        fn add_path(v: &Vec<String>, e: &str) -> Vec<String> {
+            let mut out = v.clone();
+            for s in e.split("_") {
+                out.push(s.to_string());
+            }
+            out
+        }
+
+        fn to_camel(v: &[String]) -> String {
+            v.iter()
+                .map(|s| format!("{}{}", (&s[..1].to_string()).to_uppercase(), &s[1..]))
+                .collect()
+        }
+
+        fn to_snake(v: &[String]) -> String {
+            v.as_ref().join("_")
+        }
+
+        fn sanitize(v: &str) -> (bool, String) {
+            match v {
+                "type" => (true, "type_".into()),
+                s => (false, s.into()),
+            }
+        }
+
+        fn generate_obj_agg_type(
+            extra_types: &mut Vec<TokenStream>,
+            path: Vec<String>,
+            at: &AggObjType,
+        ) -> TokenStream {
+            let name = format_ident!("{}", to_camel(&path));
+            let mut fields = vec![];
+            for (field_name, subtype) in &at.1 {
+                let (sanitized, sanitized_name) = sanitize(field_name);
+                let field_ident = format_ident!("{}", sanitized_name);
+                let rusttype = generate_type(extra_types, add_path(&path, field_name), subtype);
+                if sanitized {
+                    fields.push(quote!(
+                        #[serde(rename=#field_name)]
+                        #field_ident: Option<#rusttype>
+                    ))
+                } else {
+                    fields.push(quote!(
+                        #field_ident: Option<#rusttype>
+                    ))
+                }
+            }
+            extra_types.push(quote!(
+                #[derive(Serialize)]
+                pub struct #name {
+                    #(#fields),*
+                }
+            ));
+            quote!(#name)
+        }
+
+        fn generate_coll_agg_type(
+            extra_types: &mut Vec<TokenStream>,
+            path: Vec<String>,
+            at: &AggCollType,
+        ) -> TokenStream {
+            match at.0 {
+                AggCollTypeKey::Set => {
+                    let element_type = match &at.1 {
+                        ValueSchema::Simple(t) => generate_simple_type(&t),
+                        ValueSchema::AggColl(_) => {
+                            panic!("supposedly not supported by terraform")
+                        }
+                        ValueSchema::AggObject(_) => {
+                            panic!("supposedly not supported by terraform")
+                        }
+                    };
+                    quote!(std::collections::HashSet<String, #element_type>)
+                }
+                AggCollTypeKey::List => {
+                    let element_type = match &at.1 {
+                        ValueSchema::Simple(t) => generate_simple_type(&t),
+                        ValueSchema::AggColl(a) => {
+                            generate_coll_agg_type(extra_types, add_path(&path, "el"), a.as_ref())
+                        }
+                        ValueSchema::AggObject(a) => {
+                            generate_obj_agg_type(extra_types, add_path(&path, "el"), a.as_ref())
+                        }
+                    };
+                    quote!(std::vec::Vec<#element_type>)
+                }
+                AggCollTypeKey::Map => {
+                    let element_type = match &at.1 {
+                        ValueSchema::Simple(t) => generate_simple_type(&t),
+                        ValueSchema::AggColl(_) => {
+                            panic!("supposedly not supported by terraform")
+                        }
+                        ValueSchema::AggObject(_) => {
+                            panic!("supposedly not supported by terraform")
+                        }
+                    };
+                    quote!(std::collections::HashMap<String, #element_type>)
+                }
+            }
+        }
+
+        fn generate_type(
+            extra_types: &mut Vec<TokenStream>,
+            path: Vec<String>,
+            at: &ValueSchema,
+        ) -> TokenStream {
+            match at {
+                ValueSchema::Simple(t) => generate_simple_type(t),
+                ValueSchema::AggColl(at) => generate_coll_agg_type(extra_types, path, at.as_ref()),
+                ValueSchema::AggObject(at) => generate_obj_agg_type(extra_types, path, at.as_ref()),
+            }
+        }
+
+        #[derive(Default)]
+        struct TopLevelFields {
+            extra_types: Vec<TokenStream>,
+            fields: Vec<TokenStream>,
+            ref_methods: Vec<TokenStream>,
+            mut_methods: Vec<TokenStream>,
+            builder_fields: Vec<TokenStream>,
+            copy_builder_fields: Vec<TokenStream>,
+        }
+
+        fn generate_fields(
+            path: &Vec<String>,
+            fields: &BTreeMap<String, sourceschema::Value>,
+        ) -> TopLevelFields {
+            let mut out = TopLevelFields::default();
+            for (k, v) in fields {
+                let (sanitized, sanitized_name) = sanitize(k);
+                let field_name = format_ident!("{}", sanitized_name);
+                let mut path = path.clone();
+                path.extend(k.split("_").map(ToString::to_string));
+                let rusttype = generate_type(&mut out.extra_types, path, &v.r#type);
+                let set_field_name = format_ident!("set_{}", k);
+                let field_doc = v
+                    .description
+                    .as_ref()
+                    .map(|s| s.clone())
+                    .unwrap_or_else(String::new);
+                let set_doc = format!("Set the field `{}`.\n{}", field_name, field_doc);
+                let ref_doc = format!(
+                    "Get a reference to the value of field `{}` after provisioning.\n{}",
+                    field_name, field_doc
+                );
+
+                let refpat = format!("${{{{{{}}.{}}}}}", k);
+                if v.computed {
+                    // nop
+                } else {
+                    if v.required {
+                        out.builder_fields.push(quote!(
+                            #[doc=#field_doc]
+                            #field_name: #rusttype
+                        ));
+                        out.copy_builder_fields
+                            .push(quote!(#field_name: self.#field_name));
+                        if sanitized {
+                            out.fields.push(quote!(
+                                #[serde(rename=#k)]
+                                #field_name: #rusttype
+                            ));
+                        } else {
+                            out.fields.push(quote!(#field_name: #rusttype));
+                        }
+                        out.mut_methods.push(quote!(
+                            #[doc=#set_doc]
+                            pub fn #set_field_name(&self, v: #rusttype) -> &Self {
+                                self.data.borrow_mut().#field_name = v;
+                                self
+                            }
+                        ));
+                    } else {
+                        out.copy_builder_fields
+                            .push(quote!(#field_name: Default::default()));
+                        if sanitized {
+                            out.fields.push(quote!(
+                                #[serde(rename=#k)]
+                                #field_name: Option<#rusttype>
+                            ));
+                        } else {
+                            out.fields.push(quote!(#field_name: Option<#rusttype>));
+                        }
+                        out.mut_methods.push(quote!(
+                            #[doc=#set_doc]
+                            pub fn #set_field_name(&self, v: #rusttype) -> &Self {
+                                self.data.borrow_mut().#field_name = Some(v);
+                                self
+                            }
+                        ));
+                    }
+                }
+                out.ref_methods.push(quote!(
+                    #[doc=#ref_doc]
+                    pub fn #field_name(&self) -> Primitive<#rusttype> {
+                        Primitive::Reference(format!(#refpat, self.tf_id))
+                    }
+                ));
+            }
+            out
+        }
+
+        fn rustfile_template() -> Vec<TokenStream> {
+            vec![quote!(
+                use core::default::Default;
+                use serde::Serialize;
+                use std::cell::RefCell;
+                use std::rc::Rc;
+                use terrarust::*;
+            )]
+        }
+
+        for provider_dep in args.providers {
+            // Provider type + provider
+            let (vendor, shortname) = provider_dep
+                .name
+                .split_once("/")
+                .unwrap_or_else(|| ("hashicorp".into(), &provider_dep.name));
+            let provider_schema = {
+                let key = format!("registry.terraform.io/{}/{}", vendor, shortname);
+                schema.provider_schemas.get(&key).ok_or_else(|| {
+                    anyhow!(
+                        "Missing provider schema for listed provider {}",
+                        provider_dep.name
+                    )
+                })?
+            };
+            let provider_name_parts = &shortname
+                .split("-")
+                .map(ToString::to_string)
+                .collect::<Vec<String>>();
+            let provider_snake_name = to_snake(provider_name_parts);
+
+            let provider_dir = PathBuf::from_str(&provider_snake_name).unwrap();
+            create_dir_all(&provider_dir)?;
+            let mut mod_out = vec![];
+
+            {
+                let mut out = rustfile_template();
+
+                let camel_name = to_camel(provider_name_parts);
+
+                let provider_type_name = format_ident!("ProviderType{}", camel_name);
+                let source = &provider_dep.name;
+                let version = &provider_dep.version;
+                let provider_type_fn = format_ident!("provider_{}", provider_snake_name);
+                let provider_data_name = format_ident!("Provider{}Data", camel_name);
+
+                let raw_fields = generate_fields(
+                    &provider_name_parts,
+                    &provider_schema.provider.block.attributes,
+                );
+                let builder_fields = raw_fields.builder_fields;
+                let copy_builder_fields = raw_fields.copy_builder_fields;
+                let extra_types = raw_fields.extra_types;
+                let provider_fields = raw_fields.fields;
+                let provider_mut_methods = raw_fields.mut_methods;
+
+                let provider_name = format_ident!("Provider{}", camel_name);
+                let provider_builder_name = format_ident!("BuildProvider{}", camel_name);
+                out.push(quote! {
+                    pub struct #provider_type_name;
+
+                    impl ProviderType for #provider_type_name {
+                        fn extract_tf_id(&self) -> String {
+                            #shortname.into()
+                        }
+
+                        fn extract_required_provider(&self) -> serde_json::Value {
+                            serde_json::json!({
+                                "source": #source,
+                                "version": #version,
+                            })
+                        }
+                    }
+
+                    pub fn #provider_type_fn(stack: &Stack) -> Rc<#provider_type_name> {
+                        let out = Rc::new(#provider_type_name);
+                        stack.add_provider_type(out.clone());
+                        out
+                    }
+
+                    #[derive(Serialize)]
+                    struct #provider_data_name {
+                        alias: Option<String>,
+                        #(#provider_fields,)*
+                    }
+
+                    pub struct #provider_name {
+                        data: RefCell<#provider_data_name>,
+                    }
+
+                    impl #provider_name {
+                        pub fn set_alias(&self, alias: String) -> &Self {
+                            self.data.borrow_mut().alias = Some(alias);
+                            self
+                        }
+
+                        #(#provider_mut_methods)*
+                    }
+
+                    impl Provider for #provider_name {
+                        fn extract_type_tf_id(&self) -> String {
+                            #shortname.into()
+                        }
+
+                        fn extract_provider(&self) -> serde_json::Value {
+                            serde_json::to_value(&self.data).unwrap()
+                        }
+
+                        fn provider_ref(&self) -> String {
+                            if let Some(alias) = self.data.borrow().alias {
+                                format!("{}.{}", #shortname, alias)
+                            } else {
+                                #shortname.into()
+                            }
+                        }
+                    }
+
+                    pub struct #provider_builder_name {
+                        #(#builder_fields,)*
+                    }
+
+                    impl #provider_builder_name {
+                        pub fn build(self, stack: &Stack) -> Rc<#provider_name> {
+                            let out = Rc::new(#provider_name {
+                                data: RefCell::new(#provider_data_name{
+                                    alias: None,
+                                    #(#copy_builder_fields,)*
+                                }),
+                            });
+                            stack.add_provider(out.clone());
+                            out
+                        }
+                    }
+
+                    #(#extra_types)*
+                });
+
+                write_file(&provider_dir.join("provider.rs"), out)?;
+                let path_ident = format_ident!("provider");
+                mod_out.push(quote!(
+                    pub mod #path_ident;
+                    pub use #path_ident::*;
+                ));
+            }
+
+            // Resources
+            for (resource_name, resource) in &provider_schema.resource_schemas {
+                let mut out = rustfile_template();
+
+                let resource_name_parts = resource_name
+                    .split("_")
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>();
+                let camel_name = to_camel(&resource_name_parts);
+                let resource_data_ident = format_ident!("{}Data", camel_name);
+
+                let raw_fields = generate_fields(&resource_name_parts, &resource.block.attributes);
+                let builder_fields = raw_fields.builder_fields;
+                let copy_builder_fields = raw_fields.copy_builder_fields;
+                let extra_types = raw_fields.extra_types;
+                let resource_fields = raw_fields.fields;
+                let resource_mut_methods = raw_fields.mut_methods;
+                let resource_ref_methods = raw_fields.ref_methods;
+
+                let resource_ident = format_ident!("{}", camel_name);
+                let resource_builder_ident = format_ident!("Build{}", camel_name);
+                out.push(quote! {
+                    #[derive(Serialize)]
+                    struct #resource_data_ident {
+                        #(#resource_fields,)*
+                    }
+
+                    pub struct #resource_ident {
+                        tf_id: String,
+                        data: RefCell<#resource_data_ident>,
+                    }
+
+                    impl #resource_ident {
+                        #(#resource_mut_methods)*
+                        #(#resource_ref_methods)*
+                    }
+
+                    impl Resource for #resource_ident {
+                        fn extract_resource_type(&self) -> String {
+                            #resource_name.into()
+                        }
+
+                        fn extract_tf_id(&self) -> String {
+                            self.tf_id.clone()
+                        }
+
+                        fn extract_value(&self) -> serde_json::Value {
+                            serde_json::to_value(&self.data).unwrap()
+                        }
+                    }
+
+                    pub struct #resource_builder_ident {
+                        pub tf_id: String,
+                        #(#builder_fields,)*
+                    }
+
+                    impl #resource_builder_ident {
+                        pub fn build(self, stack: &Stack) -> Rc<#resource_ident> {
+                            let out = Rc::new(#resource_ident {
+                                tf_id: self.tf_id,
+                                data: RefCell::new(#resource_data_ident{
+                                    #(#copy_builder_fields,)*
+                                }),
+                            });
+                            stack.add_resource(out.clone());
+                            out
+                        }
+                    }
+
+                    #(#extra_types)*
+                });
+
+                write_file(&provider_dir.join(format!("{}.rs", resource_name)), out)?;
+                let path_ident = format_ident!("{}", resource_name);
+                mod_out.push(quote!(
+                    pub mod #path_ident;
+                    pub use #path_ident::*;
+                ));
+            }
+
+            // Data sources
+            for (datasource_name, datasource) in &provider_schema.data_source_schemas {
+                let mut out = rustfile_template();
+
+                let datasource_name_parts = datasource_name
+                    .split("_")
+                    .map(ToString::to_string)
+                    .collect::<Vec<String>>();
+                let camel_name = to_camel(&datasource_name_parts);
+                let datasource_data_ident = format_ident!("Data{}Data", camel_name);
+
+                let raw_fields =
+                    generate_fields(&datasource_name_parts, &datasource.block.attributes);
+                let builder_fields = raw_fields.builder_fields;
+                let copy_builder_fields = raw_fields.copy_builder_fields;
+                let extra_types = raw_fields.extra_types;
+                let datasource_fields = raw_fields.fields;
+                let datasource_mut_methods = raw_fields.mut_methods;
+                let datasource_ref_methods = raw_fields.ref_methods;
+
+                let datasource_ident = format_ident!("Data{}", camel_name);
+                let datasource_builder_ident = format_ident!("BuildData{}", camel_name);
+                out.push(quote! {
+                    struct #datasource_data_ident {
+                        #(#datasource_fields,)*
+                    }
+
+                    pub struct #datasource_ident {
+                        tf_id: String,
+                        data: RefCell<#datasource_data_ident>,
+                    }
+
+                    impl #datasource_ident {
+                        #(#datasource_mut_methods)*
+                        #(#datasource_ref_methods)*
+                    }
+
+                    impl Data for #datasource_ident {
+                        fn extract_datasource_type(&self) -> String {
+                            #datasource_name.into()
+                        }
+
+                        fn extract_tf_id(&self) -> String {
+                            self.tf_id.clone()
+                        }
+
+                        fn extract_value(&self) -> serde_json::Value {
+                            serde_json::to_value(&self.data).unwrap()
+                        }
+                    }
+
+                    pub struct #datasource_builder_ident {
+                        pub tf_id: String,
+                        #(#builder_fields,)*
+                    }
+
+                    impl #datasource_builder_ident {
+                        pub fn build(self, stack: &Stack) -> Rc<#datasource_ident> {
+                            let out = Rc::new(#datasource_ident {
+                                tf_id: self.tf_id,
+                                data: RefCell::new(#datasource_data_ident{
+                                    #(#copy_builder_fields,)*
+                                }),
+                            });
+                            stack.add_datasource(out.clone());
+                            out
+                        }
+                    }
+
+                    #(#extra_types)*
+                });
+
+                write_file(
+                    &provider_dir.join(format!("data_{}.rs", datasource_name)),
+                    out,
+                )?;
+                let path_ident = format_ident!("data_{}", datasource_name);
+                mod_out.push(quote!(
+                    pub mod #path_ident;
+                    pub use #path_ident::*;
+                ));
+            }
+
+            write_file(&provider_dir.join("mod.rs"), mod_out)?;
+        }
+
+        Ok(())
+    }) {
+        Ok(_) => {}
+        Err(e) => {
+            err!(
+                root_log,
+                "Command failed with error",
+                err = format!("{:?}", e)
+            );
+            drop(root_log);
+            std::process::exit(1);
+        }
+    }
+}

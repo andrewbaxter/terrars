@@ -1,65 +1,70 @@
-use std::{collections::BTreeMap, rc::Rc, cell::RefCell};
+use std::{cell::RefCell, collections::BTreeMap, path::PathBuf, rc::Rc};
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub struct BuildStack {
-    state_path: String,
+    state_path: PathBuf,
 }
 
 impl BuildStack {
-    build(self) -> Stack {
-        return Stack{
+    pub fn build(self) -> Stack {
+        return Stack {
             state_path: self.state_path,
-            ..Default::default(),
-        }
+            ..Default::default()
+        };
     }
 }
 
 #[derive(Default)]
 pub struct Stack {
-    state_path: String,
+    state_path: PathBuf,
     provider_types: Vec<Rc<dyn ProviderType>>,
     providers: Vec<Rc<dyn Provider>>,
     variables: Vec<Rc<Variable>>,
     datasources: Vec<Rc<dyn Datasource>>,
     resources: Vec<Rc<dyn Resource>>,
-    outputs: Vec<Output>,
+    outputs: Vec<Rc<Output>>,
 }
 
 impl Stack {
-    fn serialize(&self) -> Vec<u8> {
+    pub fn serialize(&self) -> Vec<u8> {
         let mut required_providers = BTreeMap::new();
         for p in &self.provider_types {
             required_providers.insert(p.extract_tf_id(), p.extract_required_provider());
         }
-        
+
         let mut providers = BTreeMap::new();
-            for p in &self.providers {
-                providers.entry(p.extract_type_tf_id()).or_insert_with(Vec::new)
+        for p in &self.providers {
+            providers
+                .entry(p.extract_type_tf_id())
+                .or_insert_with(Vec::new)
                 .push(p.extract_provider());
-            }
-        
-            let mut variables = BTreeMap::new();
-            for v in &self.variables {
-                variables.insert(v.tf_id, &v.data);
-            }
+        }
+
+        let mut variables = BTreeMap::new();
+        for v in &self.variables {
+            variables.insert(v.tf_id.clone(), &v.data);
+        }
 
         let mut data = BTreeMap::new();
-            for d in &self.datasources {
-                data.entry(d.extract_datasource_type()).or_insert_with(BTreeMap::new).
-                insert(d.extract_tf_id(), d.extract_datasource_type());
-            }
+        for d in &self.datasources {
+            data.entry(d.extract_datasource_type())
+                .or_insert_with(BTreeMap::new)
+                .insert(d.extract_tf_id(), d.extract_datasource_type());
+        }
 
         let mut resources = BTreeMap::new();
-            for r in &self.resources {
-                data.entry(r.extract_resource_type()).or_insert_with(BTreeMap::new)
+        for r in &self.resources {
+            resources
+                .entry(r.extract_resource_type())
+                .or_insert_with(BTreeMap::new)
                 .insert(r.extract_tf_id(), r.extract_resource_type());
-            }
+        }
 
         let mut outputs = BTreeMap::new();
         for o in &self.outputs {
-            outputs.insert(o.tf_id, &o.data);
+            outputs.insert(o.tf_id.clone(), &o.data);
         }
 
         serde_json::to_vec(&json!({
@@ -76,7 +81,24 @@ impl Stack {
             "data": data,
             "resource": resources,
             "output": outputs,
-        })).unwrap()
+        }))
+        .unwrap()
+    }
+
+    pub fn add_provider_type(&mut self, v: Rc<dyn ProviderType>) {
+        self.provider_types.push(v);
+    }
+
+    pub fn add_provider(&mut self, v: Rc<dyn Provider>) {
+        self.providers.push(v);
+    }
+
+    pub fn add_datasource(&mut self, v: Rc<dyn Datasource>) {
+        self.datasources.push(v);
+    }
+
+    pub fn add_resource(&mut self, v: Rc<dyn Resource>) {
+        self.resources.push(v);
     }
 }
 
@@ -115,6 +137,13 @@ pub trait ProviderType {
 pub trait Provider {
     fn extract_type_tf_id(&self) -> String;
     fn extract_provider(&self) -> Value;
+    fn provider_ref(&self) -> String;
+}
+
+impl<T: Provider> From<T> for Primitive<String> {
+    fn from(value: T) -> Self {
+        Primitive::Reference(value.provider_ref())
+    }
 }
 
 pub trait Datasource {
@@ -138,14 +167,14 @@ struct Variable_ {
     pub sensitive: bool,
 }
 
-pub struct Variable{
+pub struct Variable {
     tf_id: String,
     data: RefCell<Variable_>,
-};
+}
 
-impl Referable for Variable {
-    fn refer(&self) -> String {
-        format!("${{variable.{}}}", self.0.id)
+impl<T: Serialize> From<Variable> for Primitive<T> {
+    fn from(value: Variable) -> Self {
+        Primitive::Reference(format!("${{variable.{}}}", value.tf_id))
     }
 }
 
@@ -156,18 +185,16 @@ pub struct BuildVariable {
 
 impl BuildVariable {
     pub fn build(self, stack: &mut Stack) -> Rc<Variable> {
-        let out = Rc::new(Variable{
+        let out = Rc::new(Variable {
             tf_id: self.id,
-            RefCell::new(Variable_{
-                value: Variable_ {
-                    r#type: self.r#type,
-                    nullable: false,
-                    sensitive: false,
-                },
+            data: RefCell::new(Variable_ {
+                r#type: self.r#type,
+                nullable: false,
+                sensitive: false,
             }),
-    });
-    stack.variables.push(out.clone());
-    out
+        });
+        stack.variables.push(out.clone());
+        out
     }
 }
 
@@ -182,7 +209,7 @@ struct Output_ {
 pub struct Output {
     tf_id: String,
     data: RefCell<Output_>,
-};
+}
 
 pub struct BuildOutput {
     pub id: String,
@@ -190,8 +217,8 @@ pub struct BuildOutput {
 }
 
 impl BuildOutput {
-    pub fn build(self, stack:&mut Stack) -> Rc<Output> {
-        let out = Rc::new(Output{
+    pub fn build(self, stack: &mut Stack) -> Rc<Output> {
+        let out = Rc::new(Output {
             tf_id: self.id,
             data: RefCell::new(Output_ {
                 value: self.value,
