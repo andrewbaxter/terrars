@@ -17,10 +17,16 @@ use thiserror::Error;
 
 pub trait SerdeSkipDefault {
     fn is_default(&self) -> bool;
+    fn is_not_default(&self) -> bool;
 }
+
 impl<T: Default + PartialEq> SerdeSkipDefault for T {
     fn is_default(&self) -> bool {
         *self == Self::default()
+    }
+
+    fn is_not_default(&self) -> bool {
+        !self.is_default()
     }
 }
 
@@ -221,7 +227,7 @@ impl Stack {
         let mut command = Command::new("terraform");
         command.current_dir(&path).arg(mode);
         if let Some(vars) = variables {
-            let mut vars_file = tempfile::NamedTempFile::new()?;
+            let mut vars_file = tempfile::Builder::new().suffix(".json").tempfile()?;
             vars_file
                 .as_file_mut()
                 .write_all(&serde_json::to_vec_pretty(&vars)?)?;
@@ -413,7 +419,7 @@ trait Variable {
 struct VariableImplData {
     #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
     pub r#type: String,
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+    #[serde(skip_serializing_if = "SerdeSkipDefault::is_not_default")]
     pub nullable: Primitive<bool>,
     #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
     pub sensitive: Primitive<bool>,
@@ -558,4 +564,11 @@ pub struct ResourceLifecycle {
     pub prevent_destroy: bool,
     pub ignore_changes: Option<IgnoreChanges>,
     pub replace_triggered_by: Vec<String>,
+}
+
+#[macro_export]
+macro_rules! primvec {
+    ($($e:expr),*) => {
+        vec![$(terrars::Primitive::from($e)),*]
+    };
 }

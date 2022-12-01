@@ -79,6 +79,13 @@ pub enum DescriptionKind {
     Markdown,
 }
 
+pub enum ValueBehaviorHelper {
+    UserRequired,
+    UserOptional,
+    Computed,
+    UserOptionalComputed,
+}
+
 #[derive(Deserialize)]
 pub struct Value {
     pub r#type: ValueSchema,
@@ -94,10 +101,25 @@ pub struct Value {
     pub sensitive: bool,
 }
 
+impl Value {
+    pub fn behavior(&self) -> ValueBehaviorHelper {
+        match (self.required, self.optional, self.computed) {
+            (true, false, false) => ValueBehaviorHelper::UserRequired,
+            (false, true, false) => ValueBehaviorHelper::UserOptional,
+            (false, false, true) => ValueBehaviorHelper::Computed,
+            (false, true, true) => ValueBehaviorHelper::UserOptionalComputed,
+            _ => panic!(
+                "Unsupported behavior {} {} {}",
+                self.required, self.optional, self.computed
+            ),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct NestedBlock {
     pub block: Block,
-    pub nesting_mode: Option<NestingMode>,
+    pub nesting_mode: NestingMode,
     pub min_items: Option<u64>,
     pub max_items: Option<u64>,
 }

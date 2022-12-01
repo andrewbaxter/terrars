@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use proc_macro2::{TokenStream, Ident};
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 use serde_json::json;
 use sloggers::{
@@ -9,7 +9,7 @@ use sloggers::{
     Build,
 };
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     fs::{self, create_dir_all, File},
     io::Write,
     path::{Path, PathBuf},
@@ -17,8 +17,11 @@ use std::{
     str::FromStr,
 };
 
-use crate::generatelib::sourceschema::{
-    self, AggCollType, AggCollTypeKey, AggObjType, ProviderSchemas, ScalarTypeKey, ValueSchema,
+use crate::generatelib::{
+    generateblockfields::generate_block_fields,
+    generatefields::generate_fields,
+    generateshared::{to_camel, to_snake, TopLevelFields},
+    sourceschema::ProviderSchemas,
 };
 
 pub mod generatelib;
@@ -92,12 +95,12 @@ fn main() {
         )
         .context("Failed to write bootstrap terraform code for provider schema extraction")?;
         Command::new("terraform")
-            .arg("init")
+            .args(&["init", "-no-color"])
             .current_dir(&dir)
             .run()
             .context("Error initializing terraform in export dir")?;
         let schema_raw = Command::new("terraform")
-            .args(&["providers", "schema", "-json"])
+            .args(&["providers", "schema", "-json", "-no-color"])
             .current_dir(&dir)
             .output()
             .context("Error outputting terraform provider schema")?
@@ -132,233 +135,8 @@ fn main() {
             Ok(())
         }
 
-        fn generate_simple_type(t: &ScalarTypeKey) -> TokenStream {
-            match t {
-                ScalarTypeKey::Number => quote!(Primitive<f64>),
-                ScalarTypeKey::Integer => quote!(Primitive<i64>),
-                ScalarTypeKey::String => quote!(Primitive<String>),
-                ScalarTypeKey::Bool => quote!(Primitive<bool>),
-            }
-        }
-
-        fn add_path(v: &Vec<String>, e: &str) -> Vec<String> {
-            let mut out = v.clone();
-            for s in e.split("_") {
-                out.push(s.to_string());
-            }
-            out
-        }
-
-        fn to_camel(v: &[String]) -> String {
-            v.iter()
-                .map(|s| format!("{}{}", (&s[..1].to_string()).to_uppercase(), &s[1..]))
-                .collect()
-        }
-
-        fn to_snake(v: &[String]) -> String {
-            v.as_ref().join("_")
-        }
-
-        fn sanitize(v: &str) -> (bool, String) {
-            match v {
-                "type" => (true, "type_".into()),
-                s => (false, s.into()),
-            }
-        }
-
-        fn generate_obj_agg_type(
-            extra_types: &mut Vec<TokenStream>,
-            path: Vec<String>,
-            at: &AggObjType,
-        ) -> TokenStream {
-            let name = format_ident!("{}", to_camel(&path));
-            let mut fields = vec![];
-            for (field_name, subtype) in &at.1 {
-                let (sanitized, sanitized_name) = sanitize(field_name);
-                let field_ident = format_ident!("{}", sanitized_name);
-                let rusttype = generate_type(extra_types, add_path(&path, field_name), subtype);
-                if sanitized {
-                    fields.push(quote!(
-                        #[serde(rename=#field_name, skip_serializing_if = "SerdeSkipDefault::is_default")]
-                        #field_ident: Option<#rusttype>
-                    ))
-                } else {
-                    fields.push(quote!(
-                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-                        #field_ident: Option<#rusttype>
-                    ))
-                }
-            }
-            extra_types.push(quote!(
-                #[derive(Serialize)]
-                pub struct #name {
-                    #(#fields),*
-                }
-            ));
-            quote!(#name)
-        }
-
-        fn generate_coll_agg_type(
-            extra_types: &mut Vec<TokenStream>,
-            path: Vec<String>,
-            at: &AggCollType,
-        ) -> TokenStream {
-            match at.0 {
-                AggCollTypeKey::Set => {
-                    let element_type = match &at.1 {
-                        ValueSchema::Simple(t) => generate_simple_type(&t),
-                        ValueSchema::AggColl(_) => {
-                            panic!("supposedly not supported by terraform")
-                        }
-                        ValueSchema::AggObject(_) => {
-                            panic!("supposedly not supported by terraform")
-                        }
-                    };
-                    quote!(std::vec::Vec<#element_type>)
-                }
-                AggCollTypeKey::List => {
-                    let element_type = match &at.1 {
-                        ValueSchema::Simple(t) => generate_simple_type(&t),
-                        ValueSchema::AggColl(a) => {
-                            generate_coll_agg_type(extra_types, add_path(&path, "el"), a.as_ref())
-                        }
-                        ValueSchema::AggObject(a) => {
-                            generate_obj_agg_type(extra_types, add_path(&path, "el"), a.as_ref())
-                        }
-                    };
-                    quote!(std::vec::Vec<#element_type>)
-                }
-                AggCollTypeKey::Map => {
-                    let element_type = match &at.1 {
-                        ValueSchema::Simple(t) => generate_simple_type(&t),
-                        ValueSchema::AggColl(_) => {
-                            panic!("supposedly not supported by terraform")
-                        }
-                        ValueSchema::AggObject(_) => {
-                            panic!("supposedly not supported by terraform")
-                        }
-                    };
-                    quote!(std::collections::HashMap<String, #element_type>)
-                }
-            }
-        }
-
-        fn generate_type(
-            extra_types: &mut Vec<TokenStream>,
-            path: Vec<String>,
-            at: &ValueSchema,
-        ) -> TokenStream {
-            match at {
-                ValueSchema::Simple(t) => generate_simple_type(t),
-                ValueSchema::AggColl(at) => generate_coll_agg_type(extra_types, path, at.as_ref()),
-                ValueSchema::AggObject(at) => generate_obj_agg_type(extra_types, path, at.as_ref()),
-            }
-        }
-
-        #[derive(Default)]
-        struct TopLevelFields {
-            extra_types: Vec<TokenStream>,
-            fields: Vec<TokenStream>,
-            ref_methods: Vec<TokenStream>,
-            mut_methods: Vec<TokenStream>,
-            builder_fields: Vec<TokenStream>,
-            copy_builder_fields: Vec<TokenStream>,
-        }
-
-        fn generate_fields(
-            type_name: &str,
-            path: &Vec<String>,
-            fields: &BTreeMap<String, sourceschema::Value>,
-        ) -> TopLevelFields {
-            let mut out = TopLevelFields::default();
-            for (k, v) in fields {
-                let (sanitized, sanitized_name) = sanitize(k);
-                let field_name = format_ident!("{}", sanitized_name);
-                let mut path = path.clone();
-                path.extend(k.split("_").map(ToString::to_string));
-                let rusttype = generate_type(&mut out.extra_types, path, &v.r#type);
-                let set_field_name = format_ident!("set_{}", k);
-                let field_doc = v
-                    .description
-                    .as_ref()
-                    .map(|s| s.clone())
-                    .unwrap_or_else(String::new);
-                let set_doc = format!("Set the field `{}`.\n{}", field_name, field_doc);
-                let ref_doc = format!(
-                    "Get a reference to the value of field `{}` after provisioning.\n{}",
-                    field_name, field_doc
-                );
-
-                let refpat = format!("${{{{{}.{{}}.{}}}}}", type_name, k);
-                if v.computed {
-                    // nop
-                } else {
-                    if v.required {
-                        out.builder_fields.push(quote!(
-                            #[doc=#field_doc]
-                            pub #field_name: #rusttype
-                        ));
-                        out.copy_builder_fields
-                            .push(quote!(#field_name: self.#field_name));
-                        if sanitized {
-                            out.fields.push(quote!(
-                                #[serde(rename=#k)]
-                                #field_name: #rusttype
-                            ));
-                        } else {
-                            out.fields.push(quote!(
-                                #field_name: #rusttype
-                            ));
-                        }
-                        out.mut_methods.push(quote!(
-                            #[doc=#set_doc]
-                            pub fn #set_field_name(&self, v: impl Into<#rusttype>) -> &Self {
-                                self.data.borrow_mut().#field_name = v.into();
-                                self
-                            }
-                        ));
-                    } else {
-                        out.copy_builder_fields
-                            .push(quote!(#field_name: Default::default()));
-                        if sanitized {
-                            out.fields.push(quote!(
-                                #[serde(rename=#k, skip_serializing_if = "SerdeSkipDefault::is_default")]
-                                #field_name: Option<#rusttype>
-                            ));
-                        } else {
-                            out.fields.push(quote!(
-                                #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-                                #field_name: Option<#rusttype>
-                            ));
-                        }
-                        out.mut_methods.push(quote!(
-                            #[doc=#set_doc]
-                            pub fn #set_field_name(&self, v: impl Into<#rusttype>) -> &Self {
-                                self.data.borrow_mut().#field_name = Some(v.into());
-                                self
-                            }
-                        ));
-                    }
-                }
-                match &v.r#type {
-                    ValueSchema::Simple(_) => {
-                        out.ref_methods.push(quote!(
-                            #[doc=#ref_doc]
-                            pub fn #field_name(&self) -> #rusttype {
-                                Primitive::Reference(format!(#refpat, self.tf_id))
-                            }
-                        ));
-                    }
-                    ValueSchema::AggColl(_) => {}
-                    ValueSchema::AggObject(_) => {}
-                }
-            }
-            out
-        }
-
         fn rustfile_template() -> Vec<TokenStream> {
             vec![quote!(
-                use core::default::Default;
                 use serde::Serialize;
                 use std::cell::RefCell;
                 use std::rc::Rc;
@@ -398,10 +176,13 @@ fn main() {
             let provider_type_fn = format_ident!("provider_{}", provider_snake_name);
             let provider_data_name = format_ident!("Provider{}Data", camel_name);
 
-            let raw_fields = generate_fields(
+            let mut raw_fields = TopLevelFields::default();
+            generate_fields(
+                &mut raw_fields,
                 "",
                 &provider_name_parts,
                 &provider_schema.provider.block.attributes,
+                true,
             );
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -528,7 +309,21 @@ fn main() {
             let camel_name = to_camel(&use_name_parts);
             let resource_data_ident = format_ident!("{}Data", camel_name);
 
-            let raw_fields = generate_fields(&resource_name, &use_name_parts, &resource.block.attributes);
+            let mut raw_fields = TopLevelFields::default();
+            generate_fields(
+                &mut raw_fields,
+                &resource_name,
+                &use_name_parts,
+                &resource.block.attributes,
+                true,
+            );
+            generate_block_fields(
+                &mut raw_fields,
+                &resource_name,
+                &use_name_parts,
+                &resource.block.block_types,
+                true,
+            );
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
             let extra_types = raw_fields.extra_types;
@@ -570,17 +365,17 @@ fn main() {
                         self.data.borrow_mut().lifecycle.create_before_destroy = v;
                         self
                     }
-                    
+
                     pub fn set_prevent_destroy(&self, v: bool) -> &Self {
                         self.data.borrow_mut().lifecycle.prevent_destroy = v;
                         self
                     }
-                    
+
                     pub fn ignore_changes_to_all(&self) -> &Self {
                         self.data.borrow_mut().lifecycle.ignore_changes = Some(IgnoreChanges::All(IgnoreChangesAll::All));
                         self
                     }
-                    
+
                     pub fn ignore_changes_to_attr(&self, attr: impl ToString) -> &Self {
                         let mut d = self.data.borrow_mut();
                         if match &mut d.lifecycle.ignore_changes {
@@ -599,12 +394,12 @@ fn main() {
                         }
                         self
                     }
-                    
+
                     pub fn replace_triggered_by_resource(&self, r: &impl Resource) -> &Self {
                         self.data.borrow_mut().lifecycle.replace_triggered_by.push(r.resource_ref());
                         self
                     }
-                    
+
                     pub fn replace_triggered_by_attr(&self, attr: impl ToString) -> &Self {
                         self.data.borrow_mut().lifecycle.replace_triggered_by.push(attr.to_string());
                         self
@@ -642,9 +437,9 @@ fn main() {
                         let out = Rc::new(#resource_ident {
                             tf_id: self.tf_id,
                             data: RefCell::new(#resource_data_ident{
-                                depends_on: Default::default(),
+                                depends_on: core::default::Default::default(),
                                 provider: None,
-                                lifecycle: Default::default(),
+                                lifecycle: core::default::Default::default(),
                                 #(#copy_builder_fields,)*
                             }),
                         });
@@ -699,7 +494,21 @@ fn main() {
             let camel_name = to_camel(&use_name_parts);
             let datasource_data_ident = format_ident!("{}Data", camel_name);
 
-            let raw_fields = generate_fields(&datasource_name, &use_name_parts, &datasource.block.attributes);
+            let mut raw_fields = TopLevelFields::default();
+            generate_fields(
+                &mut raw_fields,
+                &datasource_name,
+                &use_name_parts,
+                &datasource.block.attributes,
+                true,
+            );
+            generate_block_fields(
+                &mut raw_fields,
+                &datasource_name,
+                &use_name_parts,
+                &datasource.block.block_types,
+                true,
+            );
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
             let extra_types = raw_fields.extra_types;
@@ -710,6 +519,7 @@ fn main() {
             let datasource_ident = format_ident!("{}", camel_name);
             let datasource_builder_ident = format_ident!("Build{}", camel_name);
             out.push(quote! {
+                #[derive(Serialize)]
                 struct #datasource_data_ident {
                     #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
                     provider: Option<String>,
@@ -755,6 +565,7 @@ fn main() {
                         let out = Rc::new(#datasource_ident {
                             tf_id: self.tf_id,
                             data: RefCell::new(#datasource_data_ident{
+                                provider: None,
                                 #(#copy_builder_fields,)*
                             }),
                         });

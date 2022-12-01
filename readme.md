@@ -32,12 +32,12 @@ Terrars also provides a command, `terrars-generate`, which generates Rust code f
    ```rust
    let mut stack = BuildStack {
        state_path: PathBuf::from_str("mystack.tfstate").unwrap(),
-   }::build();
-   let pt = provider_type_stripe(stack);
+   }.build();
+   let pt = provider_type_stripe(&mut stack);
    BuildProviderStripe {
        provider_type: pt,
        token: STRIPE_TOKEN,
-   }.build(&stack);
+   }.build(&mut stack);
    ```
 
    Then create resources:
@@ -45,17 +45,31 @@ Terrars also provides a command, `terrars-generate`, which generates Rust code f
    ```rust
    let my_product = BuildProduct {
        name: "My Product".into(),
-   }.build(&stack);
+   }.build(&mut stack);
+   let my_price = BuildPrice {
+       ...
+   }.build(&mut stack);
+   my_price.set_product(my_product.id());
    ...
    ```
 
    Finally, write the stack out:
 
    ```rust
-   fs::write("mystack.tf.json", stack.serialize())?;
+   fs::write("mystack.tf.json", stack.serialize()?)?;
    ```
 
 3. Call `terraform` on your stack as usual
+
+   `Stack` also has methods `run()` and `get_output()` to call `terraform` for you. You must have `terraform` in your path.
+
+# Data model
+
+The base library has `BuildStack`, `BuildVariable` and `BuildOutput` structs for creating those three items.
+
+`terrars-generate` creates `provider_type_*()`, `BuildProvider*`, and `BuildResource*`/`BuildData*` for you for all resources/datasources in the provider.
+
+In general `Build*` structs have required fields and a `build()` method that makes the object usable and registers it with the `Stack`.
 
 # Limitations
 
