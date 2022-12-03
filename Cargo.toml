@@ -2,6 +2,10 @@
 name = "terrars"
 version = "0.0.1"
 edition = "2021"
+description = "Terraform in Rust"
+license = "ISC"
+readme = "readme.md"
+repository = "https://github.com/andrewbaxter/terrars"
 
 [dependencies]
 anyhow = "1.0.66"

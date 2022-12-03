@@ -2,10 +2,9 @@ Terrars is a set of ergonomic tools for building Terraform configs from Rust. Th
 
 Benefits
 
-- One language - If you're already using Rust, why deal with Node.js and other languages for deploys?
+- Share definitions with your code (like endpoints, names, ids)
 - Type safety - including resource property references
 - Fewer layers - just your code and Terraform
-- Generate code for only the resources you need
 
 Current status: Usable, but may have some rough edges and missing features. Let me know if you encounter issues.
 
