@@ -1,7 +1,7 @@
 !v1
 weights:
   accounts:
-    0: 100
+    1: 100
   projects:
     https://github.com/dtolnay/anyhow: 100
     https://github.com/dtolnay/quote: 100
