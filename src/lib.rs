@@ -156,9 +156,9 @@ impl Stack {
         }
         let mut out = BTreeMap::new();
         out.insert("terraform", json!({
-            "backend" : {
-                "local" : {
-                    "path" : self . state_path,
+            "backend": {
+                "local": {
+                    "path": self . state_path,
                 },
             },
             "required_providers": required_providers
@@ -280,9 +280,13 @@ impl TfPrimitiveType for f64 {
     }
 }
 
-pub trait PrimitiveType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { }
+pub trait PrimitiveType: Serialize + Clone + TfPrimitiveType + Default + PartialEq {
 
-impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimitiveType for T { }
+}
+
+impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimitiveType for T {
+
+}
 
 /// In Terraform, all fields, regardless of whether a it's an int or bool or whatever,
 /// can also take references like `${}`. `Primitive` represents this sort of value.
@@ -318,7 +322,9 @@ impl<T: PrimitiveType + PartialEq> std::cmp::PartialEq for Primitive<T> {
     }
 }
 
-impl<T: PrimitiveType + std::cmp::Eq + PartialEq> std::cmp::Eq for Primitive<T> { }
+impl<T: PrimitiveType + std::cmp::Eq + PartialEq> std::cmp::Eq for Primitive<T> {
+
+}
 
 impl<T: PrimitiveType> Serialize for Primitive<T> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
@@ -545,6 +551,6 @@ pub struct ResourceLifecycle {
 }
 
 #[macro_export]
-macro_rules! primvec{($($ e : expr), *) => {
-    vec![$(terrars :: Primitive :: from($ e)), *]
+macro_rules! primvec{($($e: expr), *) => {
+    vec![$(terrars:: Primitive:: from($e)), *]
 };}

@@ -37,23 +37,23 @@ pub fn generate_obj_agg_type(
             fields.push(
                 quote!(
                     #[
-                        serde(rename =# field_name, skip_serializing_if = "SerdeSkipDefault::is_default")
-                    ] # field_ident : Option <# rusttype >
+                        serde(rename = #field_name, skip_serializing_if = "SerdeSkipDefault::is_default")
+                    ] #field_ident: Option < #rusttype >
                 ),
             )
         } else {
             fields.push(
                 quote!(
-                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")] # field_ident : Option <# rusttype >
+                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")] #field_ident: Option < #rusttype >
                 ),
             )
         }
     }
-    extra_types.push(quote!(#[derive(Serialize)] pub struct # name {
-        #(# fields),
+    extra_types.push(quote!(#[derive(Serialize)] pub struct #name {
+        #(#fields),
         *
     }));
-    quote!(# name)
+    quote!(#name)
 }
 
 fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>, at: &AggCollType) -> TokenStream {
@@ -68,7 +68,7 @@ fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>
                     generate_obj_agg_type(extra_types, &add_path(&path, "el"), a.as_ref())
                 },
             };
-            quote!(std :: vec :: Vec <# element_type >)
+            quote!(std:: vec:: Vec < #element_type >)
         },
         AggCollTypeKey::List => {
             let element_type = match &at.1 {
@@ -80,7 +80,7 @@ fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>
                     generate_obj_agg_type(extra_types, &add_path(&path, "el"), a.as_ref())
                 },
             };
-            quote!(std :: vec :: Vec <# element_type >)
+            quote!(std:: vec:: Vec < #element_type >)
         },
         AggCollTypeKey::Map => {
             let element_type = match &at.1 {
@@ -92,7 +92,7 @@ fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>
                     panic!("supposedly not supported by terraform")
                 },
             };
-            quote!(std::collections::HashMap < String # element_type >)
+            quote!(std:: collections:: HashMap < String #element_type >)
         },
     }
 }

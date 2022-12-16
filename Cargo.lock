@@ -319,9 +319,9 @@ dependencies = [
 
 [[package]]
 name = "genemichaels"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "274d2551578b455e4543ea7607529949c57c6edfa910ed2d1ceae580435be133"
+checksum = "8945f45ad61d00cd4c7491f773154c4c4d7eb9327b198731feba8f8095696d6f"
 dependencies = [
  "anyhow",
  "clap",

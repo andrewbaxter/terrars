@@ -68,60 +68,58 @@ pub fn generate_field(
     let refpat = format!("${{{{{}.{{}}.{}}}}}", type_name, k);
     match behavior {
         ValueBehaviorHelper::UserRequired => {
-            out.builder_fields.push(quote!(#[doc =# field_doc] pub # field_name :# rusttype));
-            out.copy_builder_fields.push(quote!(# field_name : self .# field_name));
+            out.builder_fields.push(quote!(#[doc = #field_doc] pub #field_name: #rusttype));
+            out.copy_builder_fields.push(quote!(#field_name: self . #field_name));
             if sanitized {
-                out.fields.push(quote!(#[serde(rename =# k)] # field_name :# rusttype));
+                out.fields.push(quote!(#[serde(rename = #k)] #field_name: #rusttype));
             } else {
-                out.fields.push(quote!(# field_name :# rusttype));
+                out.fields.push(quote!(#field_name: #rusttype));
             }
         },
         ValueBehaviorHelper::UserOptional | ValueBehaviorHelper::UserOptionalComputed => {
-            out.copy_builder_fields.push(quote!(# field_name : core :: default :: Default :: default()));
+            out.copy_builder_fields.push(quote!(#field_name: core:: default:: Default:: default()));
             if sanitized {
                 out
                     .fields
                     .push(
                         quote!(
                             #[
-                                serde(rename =# k, skip_serializing_if = "Option::is_none")
-                            ] # field_name : Option <# rusttype >
+                                serde(rename = #k, skip_serializing_if = "Option::is_none")
+                            ] #field_name: Option < #rusttype >
                         ),
                     );
             } else {
                 out
                     .fields
                     .push(
-                        quote!(#[serde(skip_serializing_if = "Option::is_none")] # field_name : Option <# rusttype >),
+                        quote!(#[serde(skip_serializing_if = "Option::is_none")] #field_name: Option < #rusttype >),
                     );
             }
             if self_has_identity {
                 out
                     .mut_methods
-                    .push(quote!(#[doc =# set_doc] pub fn # set_field_name(&self v : impl Into <# rusttype >) ->& Self {
-                        self . data . borrow_mut() .# field_name = Some(v.into());
+                    .push(quote!(#[doc = #set_doc] pub fn #set_field_name(& self v: impl Into < #rusttype >) ->& Self {
+                        self . data . borrow_mut() . #field_name = Some(v.into());
                         self
                     }));
             } else {
                 out
                     .mut_methods
                     .push(
-                        quote!(
-                            #[doc =# set_doc] pub fn # set_field_name(mut self, v : impl Into <# rusttype >) -> Self {
-                                self .# field_name = Some(v.into());
-                                self
-                            }
-                        ),
+                        quote!(#[doc = #set_doc] pub fn #set_field_name(mut self, v: impl Into < #rusttype >) -> Self {
+                            self . #field_name = Some(v.into());
+                            self
+                        }),
                     );
             }
         },
-        ValueBehaviorHelper::Computed => { 
+        ValueBehaviorHelper::Computed => {
             // nop
-            },
+        },
     }
     if self_has_identity && generate_ref {
-        out.ref_methods.push(quote!(#[doc =# ref_doc] pub fn # field_name(&self) -># rusttype {
-            Primitive::Reference(format!(# refpat, self.tf_id))
+        out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #rusttype {
+            Primitive::Reference(format!(#refpat, self.tf_id))
         }));
     }
 }

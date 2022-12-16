@@ -34,21 +34,21 @@ fn generate_block_agg_obj(superout: &mut TopLevelFields, path: &Vec<String>, obj
     let obj_ident = format_ident!("{}", camel_name);
     let obj_builder_ident = format_ident!("Build{}", camel_name);
     superout.extra_types.push(quote!{
-        #[derive(Serialize)] pub struct # obj_ident {
-            #(# resource_fields,) *
-        } impl # obj_ident {
-            #(# resource_mut_methods) *
-        } pub struct # obj_builder_ident {
-            #(# builder_fields,) *
-        } impl # obj_builder_ident {
-            pub fn build(self) -># obj_ident {
-                # obj_ident {
-                    #(# copy_builder_fields,) *
+        #[derive(Serialize)] pub struct #obj_ident {
+            #(#resource_fields,) *
+        } impl #obj_ident {
+            #(#resource_mut_methods) *
+        } pub struct #obj_builder_ident {
+            #(#builder_fields,) *
+        } impl #obj_builder_ident {
+            pub fn build(self) -> #obj_ident {
+                #obj_ident {
+                    #(#copy_builder_fields,) *
                 }
             }
         }
     });
-    quote!(# obj_ident)
+    quote!(#obj_ident)
 }
 
 pub fn generate_block_fields(
@@ -64,11 +64,11 @@ pub fn generate_block_fields(
         let rusttype = match v.nesting_mode {
             NestingMode::List => {
                 let element_type = generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                quote!(std :: vec :: Vec <# element_type >)
+                quote!(std:: vec:: Vec < #element_type >)
             },
             NestingMode::Set => {
                 let element_type = generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                quote!(std :: vec :: Vec <# element_type >)
+                quote!(std:: vec:: Vec < #element_type >)
             },
             NestingMode::Single => generate_block_agg_obj(out, &add_path(&path, "el"), &v.block),
         };
