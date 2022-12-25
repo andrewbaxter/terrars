@@ -87,14 +87,20 @@ pub enum StackError {
 #[derive(Error, Debug)]
 pub enum RunError {
     #[error("Error serializing stack: {0:?}")]
-    StackError(#[from]
-    StackError),
+    StackError(
+        #[from]
+        StackError,
+    ),
     #[error("Failed to write configs: {0:?}")]
-    FileError(#[from]
-    io::Error),
+    FileError(
+        #[from]
+        io::Error,
+    ),
     #[error("Failed to write or parse json: {0:?}")]
-    JsonError(#[from]
-    serde_json::Error),
+    JsonError(
+        #[from]
+        serde_json::Error,
+    ),
     #[error("Command {0:?} failed with result {1:?}")]
     CommandError(Command, process::ExitStatus),
 }
@@ -163,7 +169,7 @@ impl Stack {
                 ,
             }
             ,
-            "required_providers": required_providers
+            "required_providers": required_providers,
         }));
         if !providers.is_empty() {
             out.insert("provider", json!(providers));
@@ -553,4 +559,5 @@ macro_rules! primvec{
     ($($e: expr), *) => {
         vec![$(terrars:: Primitive:: from($e)), *]
     }
+    ;
 }

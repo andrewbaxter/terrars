@@ -3,17 +3,16 @@ weights:
   accounts:
     1: 100
   projects:
-    https://github.com/Stebalien/tempfile: 100
-    https://github.com/andrewbaxter/genemichaels: 100
-    https://github.com/clap-rs/clap: 100
     https://github.com/dtolnay/anyhow: 100
-    https://github.com/dtolnay/erased-serde: 100
-    https://github.com/dtolnay/proc-macro2: 100
     https://github.com/dtolnay/quote: 100
-    https://github.com/dtolnay/syn: 100
-    https://github.com/dtolnay/thiserror: 100
-    https://github.com/matklad/once_cell: 100
-    https://github.com/serde-rs/json: 100
-    https://github.com/serde-rs/serde: 100
-    https://github.com/sile/sloggers: 100
     https://github.com/slog-rs/slog: 100
+    https://github.com/dtolnay/erased-serde: 100
+    https://github.com/sile/sloggers: 100
+    https://github.com/dtolnay/syn: 100
+    https://github.com/matklad/once_cell: 100
+    https://github.com/Stebalien/tempfile: 100
+    https://github.com/dtolnay/thiserror: 100
+    https://github.com/dtolnay/proc-macro2: 100
+    https://github.com/serde-rs/serde: 100
+    https://github.com/serde-rs/json: 100
+    https://github.com/clap-rs/clap: 100

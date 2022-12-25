@@ -35,7 +35,60 @@ pub fn to_snake(v: &[String]) -> String {
 
 pub fn sanitize(v: &str) -> (bool, String) {
     match v {
-        "type" => (true, "type_".into()),
+        "as" |
+        "break" |
+        "const" |
+        "continue" |
+        "crate" |
+        "else" |
+        "enum" |
+        "extern" |
+        "false" |
+        "fn" |
+        "for" |
+        "if" |
+        "impl" |
+        "in" |
+        "let" |
+        "loop" |
+        "match" |
+        "mod" |
+        "move" |
+        "mut" |
+        "pub" |
+        "ref" |
+        "return" |
+        "self" |
+        "Self" |
+        "static" |
+        "struct" |
+        "super" |
+        "trait" |
+        "true" |
+        "type" |
+        "unsafe" |
+        "use" |
+        "where" |
+        "while" |
+        "async" |
+        "await" |
+        "dyn" |
+        "abstract" |
+        "become" |
+        "box" |
+        "do" |
+        "final" |
+        "macro" |
+        "override" |
+        "priv" |
+        "typeof" |
+        "unsized" |
+        "virtual" |
+        "yield" |
+        "try" => (
+            true,
+            format!("{}_", v),
+        ),
         s => (false, s.into()),
     }
 }
@@ -98,7 +151,7 @@ pub fn generate_field(
             if self_has_identity {
                 out
                     .mut_methods
-                    .push(quote!(#[doc = #set_doc] pub fn #set_field_name(& self v: impl Into < #rusttype >) ->& Self {
+                    .push(quote!(#[doc = #set_doc] pub fn #set_field_name(&self, v: impl Into < #rusttype >) ->& Self {
                         self.data.borrow_mut().#field_name = Some(v.into());
                         self
                     }));

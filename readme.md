@@ -18,7 +18,7 @@ Terrars also provides a command, `terrars-generate`, which generates Rust code f
 
 1. Generate schemas for the providers you want. As an example, `andrewbaxter/stripe`
 
-   You need to have `terraform` installed and on your path.
+   You need to have `terraform` and `rustfmt` installed and on your path.
 
    Run `cargo install terrars`, then `terrars-generate andrewbaxter/stripe 0.0.14` (or whatever the latest version is).
 

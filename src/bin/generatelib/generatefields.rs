@@ -61,8 +61,8 @@ fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>
         AggCollTypeKey::Set => {
             let element_type = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
-                ValueSchema::AggColl(_) => {
-                    panic!("supposedly not supported by terraform")
+                ValueSchema::AggColl(a) => {
+                    generate_coll_agg_type(extra_types, &add_path(&path, "el"), a.as_ref())
                 },
                 ValueSchema::AggObject(a) => {
                     generate_obj_agg_type(extra_types, &add_path(&path, "el"), a.as_ref())
@@ -92,7 +92,7 @@ fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>
                     panic!("supposedly not supported by terraform")
                 },
             };
-            quote!(std:: collections:: HashMap < String #element_type >)
+            quote!(std::collections::HashMap < String, #element_type >)
         },
     }
 }
@@ -122,7 +122,7 @@ pub fn generate_fields(
         // support collections -- not sure how hard that would be to add, although it could be
         // simple).
         //
-        // * Note that this may cause some unused types to be generated here (computedcollections, not
+        // * Note that this may cause some unused types to be generated here (computed collections, not
         //    used above and not used below)
         let generate_ref = self_has_identity && match &v.r#type {
             ValueSchema::Simple(_) => true,

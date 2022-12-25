@@ -133,15 +133,22 @@ fn main() {
             match es!({
                 File::create(&path)
                     .context("Failed to create rust file")?
-                    .write_all(
-                        genemichaels::format_ast(
-                            syn::parse2::<syn::File>(quote!(#(#contents) *))?,
-                            &genemichaels::FormatConfig::default(),
-                            Default::default(),
-                        )?
-                            .rendered
-                            .as_bytes(),
-                    )
+                    .write_all(prettyplease::unparse(&syn::parse2::<syn::File>(quote!(#(#contents) *)).map_err(|e| {
+                        anyhow!(
+                            "Failed to parse generated code for formatting: {}\n\n{}",
+                            e,
+                            contents
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<String>>()
+                                .join("\n")
+                                .lines()
+                                .enumerate()
+                                .map(|(ln, l)| format!("{:0>4} {}", ln + 1, l))
+                                .collect::<Vec<String>>()
+                                .join("\n")
+                        )
+                    })?).as_bytes())
                     .context("Failed to write rust file")?;
                 Ok(())
             }) {
@@ -217,9 +224,9 @@ fn main() {
                     out
                 }
                 #[derive(Serialize)] struct #provider_data_name {
-                    #[
-                        serde(skip_serializing_if = "SerdeSkipDefault::is_default")
-                    ] alias: Option < String > #(#provider_fields,) *
+                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    alias: Option<String>,
+                    #(#provider_fields,) *
                 }
                 pub struct #provider_name {
                     data: RefCell < #provider_data_name >,
@@ -241,7 +248,7 @@ fn main() {
                     fn provider_ref(&self) -> String {
                         let data = self.data.borrow();
                         if let Some(alias) = &data.alias {
-                            format!("{}.{}" #shortname, alias)
+                            format!("{}.{}", #shortname, alias)
                         }
                         else {
                             #shortname.into()
@@ -253,12 +260,14 @@ fn main() {
                 }
                 impl #provider_builder_name {
                     pub fn build(
-                        self _provider_type:& #provider_type_name,
+                        self,
+                        _provider_type:& #provider_type_name,
                         stack: &mut Stack
                     ) -> Rc < #provider_name > {
                         let out = Rc:: new(#provider_name {
                             data: RefCell:: new(#provider_data_name {
-                                alias: None #(#copy_builder_fields,) *
+                                alias: None,
+                                #(#copy_builder_fields,) *
                             }),
                         });
                         stack.add_provider(out.clone());
@@ -274,6 +283,7 @@ fn main() {
 
         // Resources
         for (resource_name, resource) in &provider_schema.resource_schemas {
+            println!("Generating {}", resource_name);
             let mut out = rustfile_template();
             out.push(quote!(use super:: provider:: #provider_name;));
             let use_name_parts = resource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
@@ -308,23 +318,24 @@ fn main() {
             let resource_builder_ident = format_ident!("Build{}", camel_name);
             out.push(quote!{
                 #[derive(Serialize)] struct #resource_data_ident {
-                    #[
-                        serde(skip_serializing_if = "SerdeSkipDefault::is_default")
-                    ] depends_on: Vec < String > #[
-                        serde(skip_serializing_if = "SerdeSkipDefault::is_default")
-                    ] provider: Option < String > #[
-                        serde(skip_serializing_if = "SerdeSkipDefault::is_default")
-                    ] lifecycle: ResourceLifecycle #(#resource_fields,) *
+                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    depends_on: Vec<String>,
+                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    provider: Option<String>,
+                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    lifecycle: ResourceLifecycle,
+                    #(#resource_fields,) *
                 }
                 pub struct #resource_ident {
-                    tf_id: String data: RefCell < #resource_data_ident >,
+                    tf_id: String,
+                    data: RefCell < #resource_data_ident >,
                 }
                 impl #resource_ident {
                     pub fn depends_on(&self, dep: impl Resource) -> &Self {
                         self.data.borrow_mut().depends_on.push(dep.resource_ref());
                         self
                     }
-                    pub fn set_provider(& self provider:& #provider_name) ->& Self {
+                    pub fn set_provider(&self, provider:& #provider_name) ->& Self {
                         self.data.borrow_mut().provider = Some(provider.provider_ref());
                         self
                     }
@@ -392,13 +403,10 @@ fn main() {
                         let out = Rc:: new(#resource_ident {
                             tf_id: self.tf_id,
                             data: RefCell:: new(#resource_data_ident {
-                                depends_on: core:: default:: Default:: default(
-
-                                ) ->(
-
-                                ) provider: None lifecycle: core:: default:: Default:: default(
-
-                                ) ->() #(#copy_builder_fields,) *
+                                depends_on: core::default::Default::default(),
+                                provider: None,
+                                lifecycle: core::default::Default::default(),
+                                #(#copy_builder_fields,) *
                             }),
                         });
                         stack.add_resource(out.clone());
@@ -414,6 +422,7 @@ fn main() {
 
         // Data sources
         for (datasource_name, datasource) in &provider_schema.data_source_schemas {
+            println!("Generating datasource {}", datasource_name);
             let mut out = rustfile_template();
             out.push(quote!(use super:: provider:: #provider_name;));
             let use_name_parts =
@@ -449,15 +458,16 @@ fn main() {
             let datasource_builder_ident = format_ident!("Build{}", camel_name);
             out.push(quote!{
                 #[derive(Serialize)] struct #datasource_data_ident {
-                    #[
-                        serde(skip_serializing_if = "SerdeSkipDefault::is_default")
-                    ] provider: Option < String > #(#datasource_fields,) *
+                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    provider: Option<String>,
+                    #(#datasource_fields,) *
                 }
                 pub struct #datasource_ident {
-                    tf_id: String data: RefCell < #datasource_data_ident >,
+                    tf_id: String,
+                    data: RefCell < #datasource_data_ident >,
                 }
                 impl #datasource_ident {
-                    pub fn set_provider(& self provider:& #provider_name) ->& Self {
+                    pub fn set_provider(&self, provider:& #provider_name) ->& Self {
                         self.data.borrow_mut().provider = Some(provider.provider_ref());
                         self
                     }
@@ -483,7 +493,8 @@ fn main() {
                         let out = Rc:: new(#datasource_ident {
                             tf_id: self.tf_id,
                             data: RefCell:: new(#datasource_data_ident {
-                                provider: None #(#copy_builder_fields,) *
+                                provider: None,
+                                #(#copy_builder_fields,) *
                             }),
                         });
                         stack.add_datasource(out.clone());
