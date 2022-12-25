@@ -36,11 +36,14 @@ fn generate_block_agg_obj(superout: &mut TopLevelFields, path: &Vec<String>, obj
     superout.extra_types.push(quote!{
         #[derive(Serialize)] pub struct #obj_ident {
             #(#resource_fields,) *
-        } impl #obj_ident {
+        }
+        impl #obj_ident {
             #(#resource_mut_methods) *
-        } pub struct #obj_builder_ident {
+        }
+        pub struct #obj_builder_ident {
             #(#builder_fields,) *
-        } impl #obj_builder_ident {
+        }
+        impl #obj_builder_ident {
             pub fn build(self) -> #obj_ident {
                 #obj_ident {
                     #(#copy_builder_fields,) *

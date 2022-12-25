@@ -69,7 +69,7 @@ pub fn generate_field(
     match behavior {
         ValueBehaviorHelper::UserRequired => {
             out.builder_fields.push(quote!(#[doc = #field_doc] pub #field_name: #rusttype));
-            out.copy_builder_fields.push(quote!(#field_name: self . #field_name));
+            out.copy_builder_fields.push(quote!(#field_name: self.#field_name));
             if sanitized {
                 out.fields.push(quote!(#[serde(rename = #k)] #field_name: #rusttype));
             } else {
@@ -99,7 +99,7 @@ pub fn generate_field(
                 out
                     .mut_methods
                     .push(quote!(#[doc = #set_doc] pub fn #set_field_name(& self v: impl Into < #rusttype >) ->& Self {
-                        self . data . borrow_mut() . #field_name = Some(v.into());
+                        self.data.borrow_mut().#field_name = Some(v.into());
                         self
                     }));
             } else {
@@ -107,7 +107,7 @@ pub fn generate_field(
                     .mut_methods
                     .push(
                         quote!(#[doc = #set_doc] pub fn #set_field_name(mut self, v: impl Into < #rusttype >) -> Self {
-                            self . #field_name = Some(v.into());
+                            self.#field_name = Some(v.into());
                             self
                         }),
                     );

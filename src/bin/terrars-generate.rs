@@ -103,11 +103,14 @@ fn main() {
             "terraform": {
                 "required_providers": {
                     shortname: {
-                        "source": args . provider,
-                        "version": args . version,
-                    },
-                },
-            },
+                        "source": args.provider,
+                        "version": args.version,
+                    }
+                    ,
+                }
+                ,
+            }
+            ,
         })).unwrap()).context("Failed to write bootstrap terraform code for provider schema extraction")?;
         Command::new("terraform")
             .args(&["init", "-no-color"])
@@ -142,9 +145,7 @@ fn main() {
                     .context("Failed to write rust file")?;
                 Ok(())
             }) {
-                Ok(_) => {
-
-                },
+                Ok(_) => { },
                 Err(e) => Err(e).with_context(|| {
                     format!("Failed to write generated code to {}", path.to_string_lossy())
                 })?,
@@ -201,44 +202,56 @@ fn main() {
                 pub struct #provider_type_name;
                 impl ProviderType for #provider_type_name {
                     fn extract_tf_id(&self) -> String {
-                        #shortname . into()
-                    } fn extract_required_provider(&self) -> serde_json:: Value {
+                        #shortname.into()
+                    }
+                    fn extract_required_provider(&self) -> serde_json::Value {
                         serde_json::json!({
                             "source": #source,
                             "version": #version,
                         })
                     }
-                } pub fn #provider_type_fn(stack: &mut Stack) -> Rc < #provider_type_name > {
+                }
+                pub fn #provider_type_fn(stack: &mut Stack) -> Rc < #provider_type_name > {
                     let out = Rc:: new(#provider_type_name);
                     stack.add_provider_type(out.clone());
                     out
-                } #[derive(Serialize)] struct #provider_data_name {
+                }
+                #[derive(Serialize)] struct #provider_data_name {
                     #[
                         serde(skip_serializing_if = "SerdeSkipDefault::is_default")
                     ] alias: Option < String > #(#provider_fields,) *
-                } pub struct #provider_name {
+                }
+                pub struct #provider_name {
                     data: RefCell < #provider_data_name >,
-                } impl #provider_name {
-                    pub fn set_alias(&self, alias: String) ->& Self {
+                }
+                impl #provider_name {
+                    pub fn set_alias(&self, alias: String) -> &Self {
                         self.data.borrow_mut().alias = Some(alias);
                         self
-                    } #(#provider_mut_methods) *
-                } impl Provider for #provider_name {
+                    }
+                    #(#provider_mut_methods) *
+                }
+                impl Provider for #provider_name {
                     fn extract_type_tf_id(&self) -> String {
-                        #shortname . into()
-                    } fn extract_provider(&self) -> serde_json:: Value {
+                        #shortname.into()
+                    }
+                    fn extract_provider(&self) -> serde_json::Value {
                         serde_json::to_value(&self.data).unwrap()
-                    } fn provider_ref(&self) -> String {
+                    }
+                    fn provider_ref(&self) -> String {
                         let data = self.data.borrow();
-                        if let Some(alias) =& data . alias {
+                        if let Some(alias) = &data.alias {
                             format!("{}.{}" #shortname, alias)
-                        } else {
-                            #shortname . into()
+                        }
+                        else {
+                            #shortname.into()
                         }
                     }
-                } pub struct #provider_builder_name {
+                }
+                pub struct #provider_builder_name {
                     #(#builder_fields,) *
-                } impl #provider_builder_name {
+                }
+                impl #provider_builder_name {
                     pub fn build(
                         self _provider_type:& #provider_type_name,
                         stack: &mut Stack
@@ -251,7 +264,8 @@ fn main() {
                         stack.add_provider(out.clone());
                         out
                     }
-                } #(#extra_types) *
+                }
+                #(#extra_types) *
             });
             write_file(&provider_dir.join("provider.rs"), out)?;
             let path_ident = format_ident!("provider");
@@ -301,26 +315,33 @@ fn main() {
                     ] provider: Option < String > #[
                         serde(skip_serializing_if = "SerdeSkipDefault::is_default")
                     ] lifecycle: ResourceLifecycle #(#resource_fields,) *
-                } pub struct #resource_ident {
+                }
+                pub struct #resource_ident {
                     tf_id: String data: RefCell < #resource_data_ident >,
-                } impl #resource_ident {
-                    pub fn depends_on(&self, dep: impl Resource) ->& Self {
+                }
+                impl #resource_ident {
+                    pub fn depends_on(&self, dep: impl Resource) -> &Self {
                         self.data.borrow_mut().depends_on.push(dep.resource_ref());
                         self
-                    } pub fn set_provider(& self provider:& #provider_name) ->& Self {
+                    }
+                    pub fn set_provider(& self provider:& #provider_name) ->& Self {
                         self.data.borrow_mut().provider = Some(provider.provider_ref());
                         self
-                    } pub fn set_create_before_destroy(&self, v: bool) ->& Self {
+                    }
+                    pub fn set_create_before_destroy(&self, v: bool) -> &Self {
                         self.data.borrow_mut().lifecycle.create_before_destroy = v;
                         self
-                    } pub fn set_prevent_destroy(&self, v: bool) ->& Self {
+                    }
+                    pub fn set_prevent_destroy(&self, v: bool) -> &Self {
                         self.data.borrow_mut().lifecycle.prevent_destroy = v;
                         self
-                    } pub fn ignore_changes_to_all(&self) ->& Self {
+                    }
+                    pub fn ignore_changes_to_all(&self) -> &Self {
                         self.data.borrow_mut().lifecycle.ignore_changes =
                             Some(IgnoreChanges::All(IgnoreChangesAll::All));
                         self
-                    } pub fn ignore_changes_to_attr(&self, attr: impl ToString) ->& Self {
+                    }
+                    pub fn ignore_changes_to_attr(&self, attr: impl ToString) -> &Self {
                         let mut d = self.data.borrow_mut();
                         if match &mut d.lifecycle.ignore_changes {
                             Some(i) => match i {
@@ -337,30 +358,39 @@ fn main() {
                             d.lifecycle.ignore_changes = Some(IgnoreChanges::Refs(vec![attr.to_string()]));
                         }
                         self
-                    } pub fn replace_triggered_by_resource(&self, r: &impl Resource) ->& Self {
+                    }
+                    pub fn replace_triggered_by_resource(&self, r: &impl Resource) -> &Self {
                         self.data.borrow_mut().lifecycle.replace_triggered_by.push(r.resource_ref());
                         self
-                    } pub fn replace_triggered_by_attr(&self, attr: impl ToString) ->& Self {
+                    }
+                    pub fn replace_triggered_by_attr(&self, attr: impl ToString) -> &Self {
                         self.data.borrow_mut().lifecycle.replace_triggered_by.push(attr.to_string());
                         self
-                    } #(#resource_mut_methods) * #(#resource_ref_methods) *
-                } impl Resource for #resource_ident {
+                    }
+                    #(#resource_mut_methods) * #(#resource_ref_methods) *
+                }
+                impl Resource for #resource_ident {
                     fn extract_resource_type(&self) -> String {
-                        #resource_name . into()
-                    } fn extract_tf_id(&self) -> String {
+                        #resource_name.into()
+                    }
+                    fn extract_tf_id(&self) -> String {
                         self.tf_id.clone()
-                    } fn extract_value(&self) -> serde_json:: Value {
+                    }
+                    fn extract_value(&self) -> serde_json::Value {
                         serde_json::to_value(&self.data).unwrap()
-                    } fn resource_ref(&self) -> String {
+                    }
+                    fn resource_ref(&self) -> String {
                         format!("{}.{}", self.extract_resource_type(), self.extract_tf_id())
                     }
-                } pub struct #resource_builder_ident {
+                }
+                pub struct #resource_builder_ident {
                     pub tf_id: String,
                     #(#builder_fields,) *
-                } impl #resource_builder_ident {
+                }
+                impl #resource_builder_ident {
                     pub fn build(self, stack: &mut Stack) -> Rc < #resource_ident > {
                         let out = Rc:: new(#resource_ident {
-                            tf_id: self . tf_id,
+                            tf_id: self.tf_id,
                             data: RefCell:: new(#resource_data_ident {
                                 depends_on: core:: default:: Default:: default(
 
@@ -374,7 +404,8 @@ fn main() {
                         stack.add_resource(out.clone());
                         out
                     }
-                } #(#extra_types) *
+                }
+                #(#extra_types) *
             });
             write_file(&provider_dir.join(format!("{}.rs", nice_resource_name)), out)?;
             let path_ident = format_ident!("{}", nice_resource_name);
@@ -421,28 +452,36 @@ fn main() {
                     #[
                         serde(skip_serializing_if = "SerdeSkipDefault::is_default")
                     ] provider: Option < String > #(#datasource_fields,) *
-                } pub struct #datasource_ident {
+                }
+                pub struct #datasource_ident {
                     tf_id: String data: RefCell < #datasource_data_ident >,
-                } impl #datasource_ident {
+                }
+                impl #datasource_ident {
                     pub fn set_provider(& self provider:& #provider_name) ->& Self {
                         self.data.borrow_mut().provider = Some(provider.provider_ref());
                         self
-                    } #(#datasource_mut_methods) * #(#datasource_ref_methods) *
-                } impl Datasource for #datasource_ident {
+                    }
+                    #(#datasource_mut_methods) * #(#datasource_ref_methods) *
+                }
+                impl Datasource for #datasource_ident {
                     fn extract_datasource_type(&self) -> String {
-                        #datasource_name . into()
-                    } fn extract_tf_id(&self) -> String {
+                        #datasource_name.into()
+                    }
+                    fn extract_tf_id(&self) -> String {
                         self.tf_id.clone()
-                    } fn extract_value(&self) -> serde_json:: Value {
+                    }
+                    fn extract_value(&self) -> serde_json::Value {
                         serde_json::to_value(&self.data).unwrap()
                     }
-                } pub struct #datasource_builder_ident {
+                }
+                pub struct #datasource_builder_ident {
                     pub tf_id: String,
                     #(#builder_fields,) *
-                } impl #datasource_builder_ident {
+                }
+                impl #datasource_builder_ident {
                     pub fn build(self, stack: &mut Stack) -> Rc < #datasource_ident > {
                         let out = Rc:: new(#datasource_ident {
-                            tf_id: self . tf_id,
+                            tf_id: self.tf_id,
                             data: RefCell:: new(#datasource_data_ident {
                                 provider: None #(#copy_builder_fields,) *
                             }),
@@ -450,7 +489,8 @@ fn main() {
                         stack.add_datasource(out.clone());
                         out
                     }
-                } #(#extra_types) *
+                }
+                #(#extra_types) *
             });
             write_file(&provider_dir.join(format!("{}.rs", nice_datasource_name)), out)?;
             let path_ident = format_ident!("{}", nice_datasource_name);
@@ -459,9 +499,7 @@ fn main() {
         write_file(&provider_dir.join("mod.rs"), mod_out)?;
         Ok(())
     }) {
-        Ok(_) => {
-
-        },
+        Ok(_) => { },
         Err(e) => {
             err!(root_log, "Command failed with error", err = format!("{:?}", e));
             drop(root_log);

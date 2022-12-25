@@ -56,7 +56,7 @@ pub struct BuildStack {
 
 impl BuildStack {
     pub fn build(self) -> Stack {
-        return Stack{
+        return Stack {
             state_path: self.state_path,
             provider_types: Default::default(),
             providers: Default::default(),
@@ -158,9 +158,11 @@ impl Stack {
         out.insert("terraform", json!({
             "backend": {
                 "local": {
-                    "path": self . state_path,
-                },
-            },
+                    "path": self.state_path,
+                }
+                ,
+            }
+            ,
             "required_providers": required_providers
         }));
         if !providers.is_empty() {
@@ -280,13 +282,9 @@ impl TfPrimitiveType for f64 {
     }
 }
 
-pub trait PrimitiveType: Serialize + Clone + TfPrimitiveType + Default + PartialEq {
+pub trait PrimitiveType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { }
 
-}
-
-impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimitiveType for T {
-
-}
+impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimitiveType for T { }
 
 /// In Terraform, all fields, regardless of whether a it's an int or bool or whatever,
 /// can also take references like `${}`. `Primitive` represents this sort of value.
@@ -322,12 +320,12 @@ impl<T: PrimitiveType + PartialEq> std::cmp::PartialEq for Primitive<T> {
     }
 }
 
-impl<T: PrimitiveType + std::cmp::Eq + PartialEq> std::cmp::Eq for Primitive<T> {
-
-}
+impl<T: PrimitiveType + std::cmp::Eq + PartialEq> std::cmp::Eq for Primitive<T> { }
 
 impl<T: PrimitiveType> Serialize for Primitive<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: serde::Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
         match self {
             Primitive::Literal(l) => l.serialize(serializer),
             Primitive::Reference(r) => r.serialize(serializer),
@@ -451,9 +449,9 @@ pub struct BuildVariable {
 
 impl BuildVariable {
     pub fn build<T: PrimitiveType + 'static>(self, stack: &mut Stack) -> Rc<VariableImpl<T>> {
-        let out = Rc::new(VariableImpl{
+        let out = Rc::new(VariableImpl {
             tf_id: self.tf_id,
-            data: RefCell::new(VariableImplData{
+            data: RefCell::new(VariableImplData {
                 r#type: T::extract_variable_type(),
                 nullable: false.into(),
                 sensitive: false.into(),
@@ -516,9 +514,9 @@ pub struct BuildOutput<T: PrimitiveType> {
 
 impl<T: PrimitiveType + 'static> BuildOutput<T> {
     pub fn build(self, stack: &mut Stack) -> Rc<OutputImpl<T>> {
-        let out = Rc::new(OutputImpl{
+        let out = Rc::new(OutputImpl {
             tf_id: self.tf_id,
-            data: RefCell::new(OutputImplData{
+            data: RefCell::new(OutputImplData {
                 sensitive: false.into(),
                 value: self.value,
             }),
@@ -551,6 +549,8 @@ pub struct ResourceLifecycle {
 }
 
 #[macro_export]
-macro_rules! primvec{($($e: expr), *) => {
-    vec![$(terrars:: Primitive:: from($e)), *]
-};}
+macro_rules! primvec{
+    ($($e: expr), *) => {
+        vec![$(terrars:: Primitive:: from($e)), *]
+    }
+}
