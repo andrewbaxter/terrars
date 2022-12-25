@@ -61,8 +61,8 @@ fn generate_coll_agg_type(extra_types: &mut Vec<TokenStream>, path: &Vec<String>
         AggCollTypeKey::Set => {
             let element_type = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
-                ValueSchema::AggColl(_) => {
-                    panic!("supposedly not supported by terraform")
+                ValueSchema::AggColl(a) => {
+                    generate_coll_agg_type(extra_types, &add_path(&path, "el"), a.as_ref())
                 },
                 ValueSchema::AggObject(a) => {
                     generate_obj_agg_type(extra_types, &add_path(&path, "el"), a.as_ref())

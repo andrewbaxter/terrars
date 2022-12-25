@@ -133,15 +133,22 @@ fn main() {
             match es!({
                 File::create(&path)
                     .context("Failed to create rust file")?
-                    .write_all(
-                        genemichaels::format_ast(
-                            syn::parse2::<syn::File>(quote!(#(#contents) *))?,
-                            &genemichaels::FormatConfig::default(),
-                            Default::default(),
-                        )?
-                            .rendered
-                            .as_bytes(),
-                    )
+                    .write_all(prettyplease::unparse(&syn::parse2::<syn::File>(quote!(#(#contents) *)).map_err(|e| {
+                        anyhow!(
+                            "Failed to parse generated code for formatting: {}\n\n{}",
+                            e,
+                            contents
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<String>>()
+                                .join("\n")
+                                .lines()
+                                .enumerate()
+                                .map(|(ln, l)| format!("{:0>4} {}", ln + 1, l))
+                                .collect::<Vec<String>>()
+                                .join("\n")
+                        )
+                    })?).as_bytes())
                     .context("Failed to write rust file")?;
                 Ok(())
             }) {
@@ -276,6 +283,7 @@ fn main() {
 
         // Resources
         for (resource_name, resource) in &provider_schema.resource_schemas {
+            println!("Generating {}", resource_name);
             let mut out = rustfile_template();
             out.push(quote!(use super:: provider:: #provider_name;));
             let use_name_parts = resource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
@@ -414,6 +422,7 @@ fn main() {
 
         // Data sources
         for (datasource_name, datasource) in &provider_schema.data_source_schemas {
+            println!("Generating datasource {}", datasource_name);
             let mut out = rustfile_template();
             out.push(quote!(use super:: provider:: #provider_name;));
             let use_name_parts =
