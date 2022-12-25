@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -108,10 +107,7 @@ impl Value {
             (false, true, false) => ValueBehaviorHelper::UserOptional,
             (false, false, true) => ValueBehaviorHelper::Computed,
             (false, true, true) => ValueBehaviorHelper::UserOptionalComputed,
-            _ => panic!(
-                "Unsupported behavior {} {} {}",
-                self.required, self.optional, self.computed
-            ),
+            _ => panic!("Unsupported behavior {} {} {}", self.required, self.optional, self.computed),
         }
     }
 }
