@@ -16,13 +16,37 @@ Terrars also provides a command, `terrars-generate`, which generates Rust code f
 
 # Usage
 
-1. Generate schemas for the providers you want. As an example, `andrewbaxter/stripe`
+1. Generate schemas for the providers you want. As an example, `hashicorp/aws`
 
    You need to have `terraform` installed and on your path.
 
-   Run `cargo install terrars`, then `terrars-generate andrewbaxter/stripe 0.0.14` (or whatever the latest version is).
+   First create a json file (ex: `terrars_aws.json`) containing the generation configuration:
 
-   Copy `stripe/` into your project source tree somewhere and add `pub mod stripe` to the parent module.
+   ```
+   {
+       "provider": "hashicorp/aws",
+       "version": "4.48.0",
+       "include": [
+           "cognito_user_pool",
+           "cognito_user_pool_client",
+           "cognito_user_pool_domain",
+           "cognito_user_pool_ui_customization",
+           "route53_zone",
+           "route53_record",
+           "aws_acm_certificate",
+           "aws_acm_certificate_validation"
+       ],
+       "dest": "src/bin/mydeploy/tfschema/aws"
+   }
+   ```
+
+   Run `cargo install terrars`, then `terrars-generate terrars_aws.json`.
+
+   Edit the parent `mod`/`lib.rs` file to root the generated provider:
+
+   ```
+   pub mod aws;
+   ```
 
 2. Develop your code
 
@@ -70,7 +94,7 @@ The base library has `BuildStack`, `BuildVariable` and `BuildOutput` structs for
 
 In general `Build*` structs have required fields and a `build()` method that makes the object usable and registers it with the `Stack`.
 
-# Limitations
+# Current limitations and warnings
 
 - Limited name sanitization
 
@@ -78,11 +102,7 @@ In general `Build*` structs have required fields and a `build()` method that mak
 
 - Not all Terraform features have been implemented
 
-  The only ones I'm aware of missing at the moment are resource "provisioning" and for-each/count.
-
-- References for collection types are not implemented
-
-  I don't know if those are generally valid in the first place, outside of for-each/count.
+  The only ones I'm aware of missing at the moment are resource "provisioning" and collection type references.
 
 - `ignore_changes` takes strings rather than an enum
 

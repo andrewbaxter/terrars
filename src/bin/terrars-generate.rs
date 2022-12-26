@@ -12,6 +12,10 @@ use quote::{
     format_ident,
     quote,
 };
+use serde::{
+    Serialize,
+    Deserialize,
+};
 use serde_json::json;
 use sloggers::{
     terminal::{
@@ -27,6 +31,7 @@ use std::{
         self,
         create_dir_all,
         File,
+        remove_dir_all,
     },
     io::Write,
     path::{
@@ -78,24 +83,28 @@ fn main() {
     let root_log = builder.build().unwrap();
     match es!({
         // Parse arguments
-        #[derive(Parser)]
-        struct Arguments {
+        #[derive(Serialize, Deserialize)]
+        struct Config {
             provider: String,
             version: String,
-            #[arg(
-                short,
-                long,
-                help =
-                    "If specified, only generate code for the listed resources. This does not include the provider prefix (stripe_). Prefix with data_ for data sources.",
-            )]
             include: Vec<String>,
+            dest: Option<PathBuf>,
+        }
+
+        #[derive(Parser)]
+        struct Arguments {
+            config: PathBuf,
         }
 
         let args = Arguments::parse();
+        let config =
+            serde_json::from_slice::<Config>(
+                &fs::read(&args.config).context("Couldn't find config at specified location")?,
+            ).context("Error deserializing config json")?;
         let (vendor, shortname) =
-            args.provider.split_once("/").unwrap_or_else(|| ("hashicorp".into(), &args.provider));
+            config.provider.split_once("/").unwrap_or_else(|| ("hashicorp".into(), &config.provider));
         let provider_prefix = format!("{}_", shortname);
-        let include: HashSet<&String> = args.include.iter().collect();
+        let include: HashSet<&String> = config.include.iter().collect();
 
         // Get provider schema
         let dir = tempfile::tempdir()?;
@@ -103,14 +112,11 @@ fn main() {
             "terraform": {
                 "required_providers": {
                     shortname: {
-                        "source": args.provider,
-                        "version": args.version,
+                        "source": config.provider,
+                        "version": config.version,
                     }
-                    ,
                 }
-                ,
             }
-            ,
         })).unwrap()).context("Failed to write bootstrap terraform code for provider schema extraction")?;
         Command::new("terraform")
             .args(&["init", "-no-color"])
@@ -173,12 +179,19 @@ fn main() {
         let provider_schema = {
             let key = format!("registry.terraform.io/{}/{}", vendor, shortname);
             schema.provider_schemas.get(&key).ok_or_else(|| {
-                anyhow!("Missing provider schema for listed provider {}", args.provider)
+                anyhow!("Missing provider schema for listed provider {}", config.provider)
             })?
         };
         let provider_name_parts = &shortname.split("-").map(ToString::to_string).collect::<Vec<String>>();
         let provider_snake_name = to_snake(provider_name_parts);
-        let provider_dir = PathBuf::from_str(&provider_snake_name).unwrap();
+        let provider_dir = if let Some(dest) = config.dest {
+            dest
+        } else {
+            PathBuf::from_str(&provider_snake_name).unwrap()
+        };
+        if provider_dir.exists() {
+            remove_dir_all(&provider_dir)?;
+        }
         create_dir_all(&provider_dir)?;
         let mut mod_out = vec![];
         let provider_name: Ident;
@@ -186,8 +199,8 @@ fn main() {
             let mut out = rustfile_template();
             let camel_name = to_camel(provider_name_parts);
             let provider_type_name = format_ident!("ProviderType{}", camel_name);
-            let source = &args.provider;
-            let version = &args.version;
+            let source = &config.provider;
+            let version = &config.version;
             let provider_type_fn = format_ident!("provider_{}", provider_snake_name);
             let provider_data_name = format_ident!("Provider{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
@@ -224,7 +237,7 @@ fn main() {
                     out
                 }
                 #[derive(Serialize)] struct #provider_data_name {
-                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    #[serde(skip_serializing_if = "Option::is_none")]
                     alias: Option<String>,
                     #(#provider_fields,) *
                 }
@@ -283,7 +296,6 @@ fn main() {
 
         // Resources
         for (resource_name, resource) in &provider_schema.resource_schemas {
-            println!("Generating {}", resource_name);
             let mut out = rustfile_template();
             out.push(quote!(use super:: provider:: #provider_name;));
             let use_name_parts = resource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
@@ -297,6 +309,7 @@ fn main() {
             if !include.is_empty() && !include.contains(&nice_resource_name) {
                 continue;
             }
+            println!("Generating {}", resource_name);
             let camel_name = to_camel(&use_name_parts);
             let resource_data_ident = format_ident!("{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
@@ -318,9 +331,9 @@ fn main() {
             let resource_builder_ident = format_ident!("Build{}", camel_name);
             out.push(quote!{
                 #[derive(Serialize)] struct #resource_data_ident {
-                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    #[serde(skip_serializing_if = "Vec::is_empty")]
                     depends_on: Vec<String>,
-                    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+                    #[serde(skip_serializing_if = "Option::is_none")]
                     provider: Option<String>,
                     #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
                     lifecycle: ResourceLifecycle,
@@ -422,7 +435,6 @@ fn main() {
 
         // Data sources
         for (datasource_name, datasource) in &provider_schema.data_source_schemas {
-            println!("Generating datasource {}", datasource_name);
             let mut out = rustfile_template();
             out.push(quote!(use super:: provider:: #provider_name;));
             let use_name_parts =
@@ -437,6 +449,7 @@ fn main() {
             if !include.is_empty() && !include.contains(&nice_datasource_name) {
                 continue;
             }
+            println!("Generating datasource {}", datasource_name);
             let camel_name = to_camel(&use_name_parts);
             let datasource_data_ident = format_ident!("{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();

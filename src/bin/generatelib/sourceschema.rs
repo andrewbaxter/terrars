@@ -87,7 +87,9 @@ pub enum ValueBehaviorHelper {
 
 #[derive(Deserialize)]
 pub struct Value {
-    pub r#type: ValueSchema,
+    pub r#type: Option<ValueSchema>,
+    // this is a terraform schema v1 only variation, mutually exclusive with type
+    pub nested_type: Option<ValueSchemaNested>,
     pub description: Option<String>,
     pub description_kind: Option<DescriptionKind>,
     #[serde(default)]
@@ -110,6 +112,12 @@ impl Value {
             _ => panic!("Unsupported behavior {} {} {}", self.required, self.optional, self.computed),
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct ValueSchemaNested {
+    pub nesting_mode: NestingMode,
+    pub attributes: BTreeMap<String, Value>,
 }
 
 #[derive(Deserialize)]

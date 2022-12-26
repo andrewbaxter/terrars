@@ -10,5 +10,4 @@ macro_rules! es{
     ($b: expr) => {
         $crate:: generatelib:: errextra:: err_stop(|| $b)
     }
-    ;
 }
