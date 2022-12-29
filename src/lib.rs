@@ -1,5 +1,7 @@
 use std::{
-    cell::RefCell,
+    cell::{
+        RefCell,
+    },
     collections::{
         BTreeMap,
         HashMap,
@@ -64,6 +66,7 @@ impl BuildStack {
             datasources: Default::default(),
             resources: Default::default(),
             outputs: Default::default(),
+            replace_exprs: Default::default(),
         };
     }
 }
@@ -113,6 +116,11 @@ pub struct Stack {
     datasources: Vec<Rc<dyn Datasource>>,
     resources: Vec<Rc<dyn Resource>>,
     outputs: Vec<Rc<dyn Output>>,
+    replace_exprs: Vec<(String, String)>,
+}
+
+thread_local!{
+    static REPLACE_EXPRS: RefCell<Option<Vec<(String, String)>>> = RefCell::new(None);
 }
 
 impl Stack {
@@ -186,7 +194,12 @@ impl Stack {
         if !outputs.is_empty() {
             out.insert("output", json!(outputs));
         }
-        Ok(serde_json::to_vec_pretty(&out).unwrap())
+        REPLACE_EXPRS.with(move |f| {
+            *f.borrow_mut() = Some(self.replace_exprs.clone());
+        });
+        let res = serde_json::to_vec_pretty(&out).unwrap();
+        REPLACE_EXPRS.with(|f| *f.borrow_mut() = None);
+        Ok(res)
     }
 
     pub fn add_provider_type(&mut self, v: Rc<dyn ProviderType>) {
@@ -203,6 +216,12 @@ impl Stack {
 
     pub fn add_resource(&mut self, v: Rc<dyn Resource>) {
         self.resources.push(v);
+    }
+
+    pub fn add_sentinel(&mut self, v: String) -> String {
+        let k = format!("_TERRARS_SENTINEL_{}_", self.replace_exprs.len());
+        self.replace_exprs.push((k.clone(), v));
+        k
     }
 
     /// Serialize the stack to a file and run a Terraform command on it. If variables are
@@ -262,11 +281,30 @@ impl Stack {
 // Primitives
 pub trait TfPrimitiveType {
     fn extract_variable_type() -> String;
+    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer;
 }
 
 impl TfPrimitiveType for String {
     fn extract_variable_type() -> String {
         "string".into()
+    }
+
+    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        REPLACE_EXPRS.with(|f| {
+            if let Some(vs) = f.borrow().as_ref() {
+                let mut out = self.replace("%{", "%%{").replace("${", "$${");
+                for (k, v) in vs {
+                    out = out.replace(k, v);
+                }
+                out.serialize(serializer)
+            } else {
+                self.serialize(serializer)
+            }
+        })
     }
 }
 
@@ -274,17 +312,35 @@ impl TfPrimitiveType for bool {
     fn extract_variable_type() -> String {
         "bool".into()
     }
+
+    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        self.serialize(serializer)
+    }
 }
 
 impl TfPrimitiveType for i64 {
     fn extract_variable_type() -> String {
         "int".into()
     }
+
+    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        self.serialize(serializer)
+    }
 }
 
 impl TfPrimitiveType for f64 {
     fn extract_variable_type() -> String {
         "float".into()
+    }
+
+    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        self.serialize(serializer)
     }
 }
 
@@ -300,7 +356,7 @@ impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimitiveType
 #[derive(Clone)]
 pub enum Primitive<T: PrimitiveType> {
     Literal(T),
-    Reference(String),
+    Sentinel(String),
 }
 
 impl<T: PrimitiveType> Default for Primitive<T> {
@@ -320,7 +376,7 @@ impl<T: PrimitiveType + PartialEq> std::cmp::PartialEq for Primitive<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Literal(l0), Self::Literal(r0)) => l0 == r0,
-            (Self::Reference(l0), Self::Reference(r0)) => l0 == r0,
+            (Self::Sentinel(l0), Self::Sentinel(r0)) => l0 == r0,
             _ => false,
         }
     }
@@ -333,8 +389,8 @@ impl<T: PrimitiveType> Serialize for Primitive<T> {
     where
         S: serde::Serializer {
         match self {
-            Primitive::Literal(l) => l.serialize(serializer),
-            Primitive::Reference(r) => r.serialize(serializer),
+            Primitive::Literal(l) => l.serialize2(serializer),
+            Primitive::Sentinel(r) => r.serialize2(serializer),
         }
     }
 }
@@ -361,7 +417,7 @@ impl<T: PrimitiveType + Display> Display for Primitive<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Primitive::Literal(v) => v.fmt(f),
-            Primitive::Reference(v) => v.fmt(f),
+            Primitive::Sentinel(v) => v.fmt(f),
         }
     }
 }
@@ -380,7 +436,7 @@ pub trait Provider {
 
 impl<T: Provider> From<T> for Primitive<String> {
     fn from(value: T) -> Self {
-        Primitive::Reference(value.provider_ref())
+        Primitive::Sentinel(value.provider_ref())
     }
 }
 
@@ -444,7 +500,7 @@ impl<T: PrimitiveType> VariableImpl<T> {
 
 impl<T: PrimitiveType> Into<Primitive<T>> for &VariableImpl<T> {
     fn into(self) -> Primitive<T> {
-        Primitive::Reference(format!("${{var.{}}}", self.tf_id))
+        Primitive::Sentinel(format!("${{var.{}}}", self.tf_id))
     }
 }
 
@@ -497,7 +553,7 @@ impl<T: PrimitiveType> OutputImpl<T> {
 
 impl<T: PrimitiveType> Into<Primitive<T>> for &OutputImpl<T> {
     fn into(self) -> Primitive<T> {
-        Primitive::Reference(format!("${{variable.{}}}", self.tf_id))
+        Primitive::Sentinel(format!("${{variable.{}}}", self.tf_id))
     }
 }
 

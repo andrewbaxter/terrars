@@ -94,6 +94,22 @@ The base library has `BuildStack`, `BuildVariable` and `BuildOutput` structs for
 
 In general `Build*` structs have required fields and a `build()` method that makes the object usable and registers it with the `Stack`.
 
+# Expressions/template strings/interpolation/escaping
+
+Take as an example:
+
+```
+format!("{}{}", my_expr, verbatim_string))
+```
+
+This code would somehow need to escape the pattern and `verbatim_string`, while leaving `my_expr` unescaped, and the result would need to be treated as an "expression" to prevent escaping if it's used again in another `format!` or something. This applies to not just `format!` but serde serialization (json), other methods.
+
+For now Terrars uses a simple (somewhat dirty) hack to avoid this. All expressions are put into a replacement table, and a sentinel string (ex: `_TERRARS_SENTINEL_99_`) is used instead. During final stack json serialization, the values are escaped and then the sentinel values are substituted back out for the original expressions.
+
+This way, all normal string formatting methods should retain the expected expressions.
+
+It remains to be seen how to support base64.
+
 # Current limitations and warnings
 
 - Limited name sanitization

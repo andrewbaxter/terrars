@@ -344,7 +344,7 @@ fn main() {
                     data: RefCell < #resource_data_ident >,
                 }
                 impl #resource_ident {
-                    pub fn depends_on(&self, dep: impl Resource) -> &Self {
+                    pub fn depends_on(&self, dep: &impl Resource) -> &Self {
                         self.data.borrow_mut().depends_on.push(dep.resource_ref());
                         self
                     }

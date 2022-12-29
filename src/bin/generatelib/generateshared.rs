@@ -171,8 +171,8 @@ pub fn generate_field(
         },
     }
     if self_has_identity && generate_ref {
-        out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #rusttype {
-            Primitive::Reference(format!(#refpat, self.tf_id))
+        out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self, stack: &mut Stack) -> #rusttype {
+            Primitive::Sentinel(stack.add_sentinel(format!(#refpat, self.tf_id)))
         }));
     }
 }
