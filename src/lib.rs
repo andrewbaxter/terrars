@@ -112,9 +112,9 @@ pub struct Stack {
     state_path: PathBuf,
     provider_types: Vec<Rc<dyn ProviderType>>,
     providers: Vec<Rc<dyn Provider>>,
-    variables: Vec<Rc<dyn Variable>>,
+    variables: Vec<Rc<dyn VariableTrait>>,
     datasources: Vec<Rc<dyn Datasource>>,
-    resources: Vec<Rc<dyn Resource>>,
+    resources: Vec<Rc<dyn Resource_>>,
     outputs: Vec<Rc<dyn Output>>,
     replace_exprs: Vec<(String, String)>,
 }
@@ -212,7 +212,7 @@ impl Stack {
         self.datasources.push(v);
     }
 
-    pub fn add_resource(&mut self, v: Rc<dyn Resource>) {
+    pub fn add_resource(&mut self, v: Rc<dyn Resource_>) {
         self.resources.push(v);
     }
 
@@ -429,14 +429,8 @@ pub trait ProviderType {
 pub trait Provider {
     fn extract_type_tf_id(&self) -> String;
     fn extract_provider(&self) -> Value;
-    // fn provider_ref(&self) -> String;
 }
 
-//. impl<T: Provider> From<T> for Primitive<String> {
-//.     fn from(value: T) -> Self {
-//.         Primitive::Sentinel(value.provider_ref())
-//.     }
-//. }
 pub trait Datasource {
     fn extract_datasource_type(&self) -> String;
     fn extract_tf_id(&self) -> String;
@@ -444,61 +438,13 @@ pub trait Datasource {
 }
 
 pub trait Resource {
-    fn extract_resource_type(&self) -> String;
-    fn extract_tf_id(&self) -> String;
-    fn extract_value(&self) -> Value;
     fn resource_ref(&self) -> String;
 }
 
-// Variable
-trait Variable {
+pub trait Resource_ {
+    fn extract_resource_type(&self) -> String;
     fn extract_tf_id(&self) -> String;
     fn extract_value(&self) -> Value;
-}
-
-#[derive(Serialize)]
-struct VariableImplData {
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-    pub r#type: String,
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_not_default")]
-    pub nullable: Primitive<bool>,
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-    pub sensitive: Primitive<bool>,
-}
-
-pub struct VariableImpl<T: PrimitiveType> {
-    tf_id: String,
-    data: RefCell<VariableImplData>,
-    _p: PhantomData<T>,
-}
-
-impl<T: PrimitiveType> Variable for VariableImpl<T> {
-    fn extract_tf_id(&self) -> String {
-        self.tf_id.clone()
-    }
-
-    fn extract_value(&self) -> Value {
-        let data = self.data.borrow();
-        serde_json::to_value(&*data).unwrap()
-    }
-}
-
-impl<T: PrimitiveType> VariableImpl<T> {
-    pub fn set_nullable(&self, v: impl Into<Primitive<bool>>) -> &Self {
-        self.data.borrow_mut().nullable = v.into();
-        self
-    }
-
-    pub fn set_sensitive(&self, v: impl Into<Primitive<bool>>) -> &Self {
-        self.data.borrow_mut().sensitive = v.into();
-        self
-    }
-}
-
-impl<T: PrimitiveType> Into<Primitive<T>> for &VariableImpl<T> {
-    fn into(self) -> Primitive<T> {
-        Primitive::Sentinel(format!("${{var.{}}}", self.tf_id))
-    }
 }
 
 // References
@@ -566,14 +512,76 @@ impl<T: Ref> MapRef<T> {
     }
 }
 
-/// Create a new variable.
+// Variable
+trait VariableTrait {
+    fn extract_tf_id(&self) -> String;
+    fn extract_value(&self) -> Value;
+}
+
+#[derive(Serialize)]
+struct VariableImplData {
+    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+    pub r#type: String,
+    #[serde(skip_serializing_if = "SerdeSkipDefault::is_not_default")]
+    pub nullable: Primitive<bool>,
+    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
+    pub sensitive: Primitive<bool>,
+}
+
+struct Variable_<T: PrimitiveType> {
+    tf_id: String,
+    data: RefCell<VariableImplData>,
+    _p: PhantomData<T>,
+}
+
+pub struct Variable<T: PrimitiveType>(Rc<Variable_<T>>);
+
+impl<T: PrimitiveType> VariableTrait for Variable_<T> {
+    fn extract_tf_id(&self) -> String {
+        self.tf_id.clone()
+    }
+
+    fn extract_value(&self) -> Value {
+        let data = self.data.borrow();
+        serde_json::to_value(&*data).unwrap()
+    }
+}
+
+impl<T: PrimitiveType> Variable<T> {
+    pub fn set_nullable(self, v: impl Into<Primitive<bool>>) -> Self {
+        self.0.data.borrow_mut().nullable = v.into();
+        self
+    }
+
+    pub fn set_sensitive(self, v: impl Into<Primitive<bool>>) -> Self {
+        self.0.data.borrow_mut().sensitive = v.into();
+        self
+    }
+
+    fn to_expr_str(&self) -> String {
+        format!("${{var.{}}}", self.0.tf_id)
+    }
+}
+
+impl<T: PrimitiveType> Into<Primitive<T>> for &Variable<T> {
+    fn into(self) -> Primitive<T> {
+        Primitive::Sentinel(self.to_expr_str())
+    }
+}
+
+impl<T: PrimitiveType> ToString for &Variable<T> {
+    fn to_string(&self) -> String {
+        self.to_expr_str()
+    }
+}
+
 pub struct BuildVariable {
     pub tf_id: String,
 }
 
 impl BuildVariable {
-    pub fn build<T: PrimitiveType + 'static>(self, stack: &mut Stack) -> Rc<VariableImpl<T>> {
-        let out = Rc::new(VariableImpl {
+    pub fn build<T: PrimitiveType + 'static>(self, stack: &mut Stack) -> Variable<T> {
+        let out = Variable(Rc::new(Variable_ {
             tf_id: self.tf_id,
             data: RefCell::new(VariableImplData {
                 r#type: T::extract_variable_type(),
@@ -581,8 +589,8 @@ impl BuildVariable {
                 sensitive: false.into(),
             }),
             _p: Default::default(),
-        });
-        stack.variables.push(out.clone());
+        }));
+        stack.variables.push(out.0.clone());
         out
     }
 }

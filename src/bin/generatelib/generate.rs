@@ -178,7 +178,9 @@ pub fn generate_field(
                     .mut_methods
                     .push(
                         quote!(
-                            #[doc = #set_doc] pub fn #set_field_name(self, v: impl Into < #rust_field_type >) -> Self {
+                            #[
+                                doc = #set_doc
+                            ] pub fn #set_field_name(mut self, v: impl Into < #rust_field_type >) -> Self {
                                 self.#field_name = Some(v.into());
                                 self
                             }
@@ -190,16 +192,16 @@ pub fn generate_field(
             // nop
         },
     }
-    if self_has_identity {
-        if let Some((t1, t2)) = rust_field_ref_type {
+    if let Some((t1, t2)) = rust_field_ref_type {
+        if self_has_identity {
             out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-                #t1:: new(self.0.tf_id)
-            }));
-            let ref_ref_fmt = format!("{{}}.{}", k);
-            out.ref_ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-                #t1:: new(format!(#ref_ref_fmt, self.base))
+                #t1:: new(self.0.tf_id.clone())
             }));
         }
+        let ref_ref_fmt = format!("{{}}.{}", k);
+        out.ref_ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
+            #t1:: new(format!(#ref_ref_fmt, self.base))
+        }));
     }
 }
 
@@ -215,7 +217,7 @@ fn generate_type(
         (None, Some(x)) => match x.nesting_mode {
             super::sourceschema::NestingMode::List => {
                 let (element_type, element_ref_type) =
-                    generate_agg_type_ogg_nested(extra_types, &add_path(&path, "el"), &x.attributes);
+                    generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
                     quote!(Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
@@ -223,7 +225,7 @@ fn generate_type(
             },
             super::sourceschema::NestingMode::Set => {
                 let (element_type, _) =
-                    generate_agg_type_ogg_nested(extra_types, &add_path(&path, "el"), &x.attributes);
+                    generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (quote!(Vec < #element_type >), None)
             },
             super::sourceschema::NestingMode::Single => unreachable!(),
@@ -243,7 +245,7 @@ pub fn generate_agg_type_obj(
     (rust_type, Some((rust_ref_type.clone(), rust_ref_type)))
 }
 
-pub fn generate_agg_type_ogg_nested(
+pub fn generate_agg_type_obj_nested(
     extra_types: &mut Vec<TokenStream>,
     path: &Vec<String>,
     at: &BTreeMap<String, Value>,
@@ -436,7 +438,7 @@ pub fn generate_nonident_rust_type(
             }
         }
         impl #obj_ref_ident {
-            #(#ref_ref_methods,) *
+            #(#ref_ref_methods) *
         }
     });
     (quote!(#obj_ident), quote!(#obj_ref_ident))
