@@ -42,12 +42,12 @@ use std::{
     str::FromStr,
 };
 use crate::generatelib::{
-    generateblockfields::generate_block_fields,
-    generatefields::generate_fields,
-    generateshared::{
+    generate::{
         to_camel,
         to_snake,
         TopLevelFields,
+        generate_fields_from_value_map,
+        generate_block_fields,
     },
     sourceschema::ProviderSchemas,
 };
@@ -194,7 +194,7 @@ fn main() {
         }
         create_dir_all(&provider_dir)?;
         let mut mod_out = vec![];
-        let provider_name: Ident;
+        let provider_ident: Ident;
         {
             let mut out = rustfile_template();
             let camel_name = to_camel(provider_name_parts);
@@ -202,16 +202,22 @@ fn main() {
             let source = &config.provider;
             let version = &config.version;
             let provider_type_fn = format_ident!("provider_{}", provider_snake_name);
-            let provider_data_name = format_ident!("Provider{}Data", camel_name);
+            let provider_inner_mut_ident = format_ident!("Provider{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
-            generate_fields(&mut raw_fields, &provider_name_parts, &provider_schema.provider.block.attributes, true);
+            generate_fields_from_value_map(
+                &mut raw_fields,
+                &provider_name_parts,
+                &provider_schema.provider.block.attributes,
+                true,
+            );
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
             let extra_types = raw_fields.extra_types;
             let provider_fields = raw_fields.fields;
             let provider_mut_methods = raw_fields.mut_methods;
-            provider_name = format_ident!("Provider{}", camel_name);
-            let provider_builder_name = format_ident!("BuildProvider{}", camel_name);
+            provider_ident = format_ident!("Provider{}", camel_name);
+            let provider_inner_ident = format_ident!("Provider{}_", camel_name);
+            let provider_builder_ident = format_ident!("BuildProvider{}", camel_name);
             out.push(quote!{
                 pub struct #provider_type_name;
                 impl ProviderType for #provider_type_name {
@@ -230,30 +236,18 @@ fn main() {
                     stack.add_provider_type(out.clone());
                     out
                 }
-                #[derive(Serialize)] struct #provider_data_name {
+                #[derive(Serialize)] struct #provider_inner_mut_ident {
                     #[serde(skip_serializing_if = "Option::is_none")]
                     alias: Option<String>,
                     #(#provider_fields,) *
                 }
-                pub struct #provider_name {
-                    data: RefCell < #provider_data_name >,
+                struct #provider_inner_ident {
+                    data: RefCell < #provider_inner_mut_ident >,
                 }
-                impl #provider_name {
-                    pub fn set_alias(&self, alias: String) -> &Self {
-                        self.data.borrow_mut().alias = Some(alias);
-                        self
-                    }
-                    #(#provider_mut_methods) *
-                }
-                impl Provider for #provider_name {
-                    fn extract_type_tf_id(&self) -> String {
-                        #shortname.into()
-                    }
-                    fn extract_provider(&self) -> serde_json::Value {
-                        serde_json::to_value(&self.data).unwrap()
-                    }
-                    fn provider_ref(&self) -> String {
-                        let data = self.data.borrow();
+                pub struct #provider_ident(Rc < #provider_inner_ident >);
+                impl #provider_ident {
+                    pub fn provider_ref(&self) -> String {
+                        let data = self.0.data.borrow();
                         if let Some(alias) = &data.alias {
                             format!("{}.{}", #shortname, alias)
                         }
@@ -261,23 +255,32 @@ fn main() {
                             #shortname.into()
                         }
                     }
+                    pub fn set_alias(self, alias: String) -> Self {
+                        self.0.data.borrow_mut().alias = Some(alias);
+                        self
+                    }
+                    #(#provider_mut_methods) *
                 }
-                pub struct #provider_builder_name {
+                impl Provider for #provider_inner_ident {
+                    fn extract_type_tf_id(&self) -> String {
+                        #shortname.into()
+                    }
+                    fn extract_provider(&self) -> serde_json::Value {
+                        serde_json::to_value(&self.data).unwrap()
+                    }
+                }
+                pub struct #provider_builder_ident {
                     #(#builder_fields,) *
                 }
-                impl #provider_builder_name {
-                    pub fn build(
-                        self,
-                        _provider_type:& #provider_type_name,
-                        stack: &mut Stack
-                    ) -> Rc < #provider_name > {
-                        let out = Rc:: new(#provider_name {
-                            data: RefCell:: new(#provider_data_name {
+                impl #provider_builder_ident {
+                    pub fn build(self, _provider_type:& #provider_type_name, stack: &mut Stack) -> #provider_ident {
+                        let out = #provider_ident(Rc:: new(#provider_inner_ident {
+                            data: RefCell:: new(#provider_inner_mut_ident {
                                 alias: None,
                                 #(#copy_builder_fields,) *
                             }),
-                        });
-                        stack.add_provider(out.clone());
+                        }));
+                        stack.add_provider(out.0.clone());
                         out
                     }
                 }
@@ -291,7 +294,7 @@ fn main() {
         // Resources
         for (resource_name, resource) in &provider_schema.resource_schemas {
             let mut out = rustfile_template();
-            out.push(quote!(use super:: provider:: #provider_name;));
+            out.push(quote!(use super:: provider:: #provider_ident;));
             let use_name_parts = resource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
                 anyhow!(
                     "resource [[{}]] name missing expected provider prefix [[{}]]",
@@ -305,9 +308,8 @@ fn main() {
             }
             println!("Generating {}", resource_name);
             let camel_name = to_camel(&use_name_parts);
-            let resource_data_ident = format_ident!("{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
-            generate_fields(&mut raw_fields, &use_name_parts, &resource.block.attributes, true);
+            generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &resource.block.attributes, true);
             generate_block_fields(&mut raw_fields, &use_name_parts, &resource.block.block_types, true);
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -316,9 +318,11 @@ fn main() {
             let resource_mut_methods = raw_fields.mut_methods;
             let resource_ref_methods = raw_fields.ref_methods;
             let resource_ident = format_ident!("{}", camel_name);
+            let resource_inner_ident = format_ident!("{}_", camel_name);
+            let resource_inner_mut_ident = format_ident!("{}Data", camel_name);
             let resource_builder_ident = format_ident!("Build{}", camel_name);
             out.push(quote!{
-                #[derive(Serialize)] struct #resource_data_ident {
+                #[derive(Serialize)] struct #resource_inner_mut_ident {
                     #[serde(skip_serializing_if = "Vec::is_empty")]
                     depends_on: Vec<String>,
                     #[serde(skip_serializing_if = "Option::is_none")]
@@ -327,34 +331,35 @@ fn main() {
                     lifecycle: ResourceLifecycle,
                     #(#resource_fields,) *
                 }
-                pub struct #resource_ident {
+                struct #resource_inner_ident {
                     tf_id: String,
-                    data: RefCell < #resource_data_ident >,
+                    data: RefCell < #resource_inner_mut_ident >,
                 }
+                #[derive(Clone)] pub struct #resource_ident(Rc < #resource_inner_ident >);
                 impl #resource_ident {
-                    pub fn depends_on(&self, dep: &impl Resource) -> &Self {
-                        self.data.borrow_mut().depends_on.push(dep.resource_ref());
+                    pub fn depends_on(self, dep: &impl Resource) -> Self {
+                        self.0.data.borrow_mut().depends_on.push(dep.resource_ref());
                         self
                     }
-                    pub fn set_provider(&self, provider:& #provider_name) ->& Self {
-                        self.data.borrow_mut().provider = Some(provider.provider_ref());
+                    pub fn set_provider(self, provider:& #provider_ident) -> Self {
+                        self.0.data.borrow_mut().provider = Some(provider.provider_ref());
                         self
                     }
-                    pub fn set_create_before_destroy(&self, v: bool) -> &Self {
-                        self.data.borrow_mut().lifecycle.create_before_destroy = v;
+                    pub fn set_create_before_destroy(self, v: bool) -> Self {
+                        self.0.data.borrow_mut().lifecycle.create_before_destroy = v;
                         self
                     }
-                    pub fn set_prevent_destroy(&self, v: bool) -> &Self {
-                        self.data.borrow_mut().lifecycle.prevent_destroy = v;
+                    pub fn set_prevent_destroy(self, v: bool) -> Self {
+                        self.0.data.borrow_mut().lifecycle.prevent_destroy = v;
                         self
                     }
-                    pub fn ignore_changes_to_all(&self) -> &Self {
-                        self.data.borrow_mut().lifecycle.ignore_changes =
+                    pub fn ignore_changes_to_all(self) -> Self {
+                        self.0.data.borrow_mut().lifecycle.ignore_changes =
                             Some(IgnoreChanges::All(IgnoreChangesAll::All));
                         self
                     }
-                    pub fn ignore_changes_to_attr(&self, attr: impl ToString) -> &Self {
-                        let mut d = self.data.borrow_mut();
+                    pub fn ignore_changes_to_attr(self, attr: impl ToString) -> Self {
+                        let mut d = self.0.data.borrow_mut();
                         if match &mut d.lifecycle.ignore_changes {
                             Some(i) => match i {
                                 IgnoreChanges::All(_) => {
@@ -371,17 +376,17 @@ fn main() {
                         }
                         self
                     }
-                    pub fn replace_triggered_by_resource(&self, r: &impl Resource) -> &Self {
-                        self.data.borrow_mut().lifecycle.replace_triggered_by.push(r.resource_ref());
+                    pub fn replace_triggered_by_resource(self, r: &impl Resource) -> Self {
+                        self.0.data.borrow_mut().lifecycle.replace_triggered_by.push(r.resource_ref());
                         self
                     }
-                    pub fn replace_triggered_by_attr(&self, attr: impl ToString) -> &Self {
-                        self.data.borrow_mut().lifecycle.replace_triggered_by.push(attr.to_string());
+                    pub fn replace_triggered_by_attr(self, attr: impl ToString) -> Self {
+                        self.0.data.borrow_mut().lifecycle.replace_triggered_by.push(attr.to_string());
                         self
                     }
                     #(#resource_mut_methods) * #(#resource_ref_methods) *
                 }
-                impl Resource for #resource_ident {
+                impl Resource for #resource_inner_ident {
                     fn extract_resource_type(&self) -> String {
                         #resource_name.into()
                     }
@@ -400,17 +405,17 @@ fn main() {
                     #(#builder_fields,) *
                 }
                 impl #resource_builder_ident {
-                    pub fn build(self, stack: &mut Stack) -> Rc < #resource_ident > {
-                        let out = Rc:: new(#resource_ident {
+                    pub fn build(self, stack: &mut Stack) -> #resource_ident {
+                        let out = #resource_ident(Rc:: new(#resource_inner_ident {
                             tf_id: self.tf_id,
-                            data: RefCell:: new(#resource_data_ident {
+                            data: RefCell:: new(#resource_inner_mut_ident {
                                 depends_on: core::default::Default::default(),
                                 provider: None,
                                 lifecycle: core::default::Default::default(),
                                 #(#copy_builder_fields,) *
                             }),
-                        });
-                        stack.add_resource(out.clone());
+                        }));
+                        stack.add_resource(out.0.clone());
                         out
                     }
                 }
@@ -424,7 +429,7 @@ fn main() {
         // Data sources
         for (datasource_name, datasource) in &provider_schema.data_source_schemas {
             let mut out = rustfile_template();
-            out.push(quote!(use super:: provider:: #provider_name;));
+            out.push(quote!(use super:: provider:: #provider_ident;));
             let use_name_parts =
                 ["data"].into_iter().chain(datasource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
                     anyhow!(
@@ -439,9 +444,8 @@ fn main() {
             }
             println!("Generating datasource {}", datasource_name);
             let camel_name = to_camel(&use_name_parts);
-            let datasource_data_ident = format_ident!("{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
-            generate_fields(&mut raw_fields, &use_name_parts, &datasource.block.attributes, true);
+            generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &datasource.block.attributes, true);
             generate_block_fields(&mut raw_fields, &use_name_parts, &datasource.block.block_types, true);
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -450,25 +454,28 @@ fn main() {
             let datasource_mut_methods = raw_fields.mut_methods;
             let datasource_ref_methods = raw_fields.ref_methods;
             let datasource_ident = format_ident!("{}", camel_name);
+            let datasource_inner_ident = format_ident!("{}_", camel_name);
+            let datasource_inner_mut_ident = format_ident!("{}Data", camel_name);
             let datasource_builder_ident = format_ident!("Build{}", camel_name);
             out.push(quote!{
-                #[derive(Serialize)] struct #datasource_data_ident {
+                #[derive(Serialize)] struct #datasource_inner_mut_ident {
                     #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
                     provider: Option<String>,
                     #(#datasource_fields,) *
                 }
-                pub struct #datasource_ident {
+                struct #datasource_inner_ident {
                     tf_id: String,
-                    data: RefCell < #datasource_data_ident >,
+                    data: RefCell < #datasource_inner_mut_ident >,
                 }
-                impl #datasource_ident {
-                    pub fn set_provider(&self, provider:& #provider_name) ->& Self {
+                impl #datasource_inner_ident {
+                    pub fn set_provider(&self, provider:& #provider_ident) ->& Self {
                         self.data.borrow_mut().provider = Some(provider.provider_ref());
                         self
                     }
                     #(#datasource_mut_methods) * #(#datasource_ref_methods) *
                 }
-                impl Datasource for #datasource_ident {
+                #[derive(Clone)] pub struct #datasource_ident(Rc < #datasource_inner_ident >);
+                impl Datasource for #datasource_inner_ident {
                     fn extract_datasource_type(&self) -> String {
                         #datasource_name.into()
                     }
@@ -484,15 +491,15 @@ fn main() {
                     #(#builder_fields,) *
                 }
                 impl #datasource_builder_ident {
-                    pub fn build(self, stack: &mut Stack) -> Rc < #datasource_ident > {
-                        let out = Rc:: new(#datasource_ident {
+                    pub fn build(self, stack: &mut Stack) -> #datasource_ident {
+                        let out = #datasource_ident(Rc:: new(#datasource_inner_ident {
                             tf_id: self.tf_id,
-                            data: RefCell:: new(#datasource_data_ident {
+                            data: RefCell:: new(#datasource_inner_mut_ident {
                                 provider: None,
                                 #(#copy_builder_fields,) *
                             }),
-                        });
-                        stack.add_datasource(out.clone());
+                        }));
+                        stack.add_datasource(out.0.clone());
                         out
                     }
                 }

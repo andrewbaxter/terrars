@@ -173,10 +173,8 @@ impl Stack {
             "backend": {
                 "local": {
                     "path": self.state_path,
-                }
-                ,
-            }
-            ,
+                },
+            },
             "required_providers": required_providers,
         }));
         if !providers.is_empty() {
@@ -431,15 +429,14 @@ pub trait ProviderType {
 pub trait Provider {
     fn extract_type_tf_id(&self) -> String;
     fn extract_provider(&self) -> Value;
-    fn provider_ref(&self) -> String;
+    // fn provider_ref(&self) -> String;
 }
 
-impl<T: Provider> From<T> for Primitive<String> {
-    fn from(value: T) -> Self {
-        Primitive::Sentinel(value.provider_ref())
-    }
-}
-
+//. impl<T: Provider> From<T> for Primitive<String> {
+//.     fn from(value: T) -> Self {
+//.         Primitive::Sentinel(value.provider_ref())
+//.     }
+//. }
 pub trait Datasource {
     fn extract_datasource_type(&self) -> String;
     fn extract_tf_id(&self) -> String;
@@ -679,6 +676,5 @@ pub struct ResourceLifecycle {
 macro_rules! primvec{
     ($($e: expr), *) => {
         vec![$(terrars:: Primitive:: from($e)), *]
-    }
-    ;
+    };
 }
