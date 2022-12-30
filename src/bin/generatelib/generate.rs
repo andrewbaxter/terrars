@@ -194,8 +194,9 @@ pub fn generate_field(
     }
     if let Some((t1, t2)) = rust_field_ref_type {
         if self_has_identity {
+            let ref_fmt = format!("{{}}.{}", k);
             out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-                #t1:: new(self.0.tf_id.clone())
+                #t1:: new(format!(#ref_fmt, self.extract_ref()))
             }));
         }
         let ref_ref_fmt = format!("{{}}.{}", k);

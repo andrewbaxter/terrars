@@ -7,7 +7,10 @@ use std::{
         HashMap,
     },
     fmt::Display,
-    fs,
+    fs::{
+        self,
+        create_dir_all,
+    },
     hash::Hash,
     io::{
         self,
@@ -24,6 +27,7 @@ use std::{
         Stdio,
     },
     rc::Rc,
+    str::FromStr,
 };
 use serde::{
     de::DeserializeOwned,
@@ -52,14 +56,11 @@ impl<T: Default + PartialEq> SerdeSkipDefault for T {
 }
 
 /// Use this to create a new stack.
-pub struct BuildStack {
-    pub state_path: PathBuf,
-}
+pub struct BuildStack {}
 
 impl BuildStack {
     pub fn build(self) -> Stack {
         return Stack {
-            state_path: self.state_path,
             provider_types: Default::default(),
             providers: Default::default(),
             variables: Default::default(),
@@ -89,6 +90,8 @@ pub enum StackError {
 
 #[derive(Error, Debug)]
 pub enum RunError {
+    #[error("Failed to prepare run directory {0:?}: {1:?}")]
+    FsError(PathBuf, io::Error),
     #[error("Error serializing stack: {0:?}")]
     StackError(
         #[from]
@@ -109,11 +112,10 @@ pub enum RunError {
 }
 
 pub struct Stack {
-    state_path: PathBuf,
     provider_types: Vec<Rc<dyn ProviderType>>,
     providers: Vec<Rc<dyn Provider>>,
     variables: Vec<Rc<dyn VariableTrait>>,
-    datasources: Vec<Rc<dyn Datasource>>,
+    datasources: Vec<Rc<dyn Datasource_>>,
     resources: Vec<Rc<dyn Resource_>>,
     outputs: Vec<Rc<dyn Output>>,
     replace_exprs: Vec<(String, String)>,
@@ -125,7 +127,10 @@ thread_local!{
 
 impl Stack {
     /// Convert the stack to json bytes.
-    pub fn serialize(&self) -> Result<Vec<u8>, StackError> {
+    pub fn serialize(&self, state_path: &Path) -> Result<Vec<u8>, StackError> {
+        REPLACE_EXPRS.with(move |f| {
+            *f.borrow_mut() = Some(self.replace_exprs.clone());
+        });
         let mut required_providers = BTreeMap::new();
         for p in &self.provider_types {
             if required_providers.insert(p.extract_tf_id(), p.extract_required_provider()).is_some() {
@@ -172,7 +177,7 @@ impl Stack {
         out.insert("terraform", json!({
             "backend": {
                 "local": {
-                    "path": self.state_path,
+                    "path": state_path.to_string_lossy(),
                 },
             },
             "required_providers": required_providers,
@@ -192,11 +197,8 @@ impl Stack {
         if !outputs.is_empty() {
             out.insert("output", json!(outputs));
         }
-        REPLACE_EXPRS.with(move |f| {
-            *f.borrow_mut() = Some(self.replace_exprs.clone());
-        });
-        let res = serde_json::to_vec_pretty(&out).unwrap();
         REPLACE_EXPRS.with(|f| *f.borrow_mut() = None);
+        let res = serde_json::to_vec_pretty(&out).unwrap();
         Ok(res)
     }
 
@@ -208,7 +210,7 @@ impl Stack {
         self.providers.push(v);
     }
 
-    pub fn add_datasource(&mut self, v: Rc<dyn Datasource>) {
+    pub fn add_datasource(&mut self, v: Rc<dyn Datasource_>) {
         self.datasources.push(v);
     }
 
@@ -226,8 +228,18 @@ impl Stack {
     /// provided, they must be a single-level struct where all values are primitives (i64,
     /// f64, String, bool).
     pub fn run<V: Serialize>(&self, path: &Path, variables: Option<&V>, mode: &str) -> Result<(), RunError> {
-        let stack_path = path.join("stack.tf.json");
-        fs::write(&stack_path, &self.serialize()?)?;
+        create_dir_all(path).map_err(|e| RunError::FsError(path.to_path_buf(), e))?;
+        let state_name = "state.tfstate";
+        fs::write(&path.join("stack.tf.json"), &self.serialize(&PathBuf::from_str(state_name).unwrap())?)?;
+        let state_path = path.join(state_name);
+        if !state_path.exists() {
+            let mut command = Command::new("terraform");
+            command.current_dir(&path).arg("init");
+            let res = command.status()?;
+            if !res.success() {
+                return Err(RunError::CommandError(command, res));
+            }
+        }
         let mut command = Command::new("terraform");
         command.current_dir(&path).arg(mode);
         if let Some(vars) = variables {
@@ -236,12 +248,12 @@ impl Stack {
             command.arg(format!("-var-file={}", vars_file.path().to_string_lossy()));
             let res = command.status()?;
             if !res.success() {
-                Err(RunError::CommandError(command, res))?;
+                return Err(RunError::CommandError(command, res))?;
             }
         } else {
             let res = command.status()?;
             if !res.success() {
-                Err(RunError::CommandError(command, res))?;
+                return Err(RunError::CommandError(command, res))?;
             }
         }
         Ok(())
@@ -432,13 +444,17 @@ pub trait Provider {
 }
 
 pub trait Datasource {
+    fn extract_ref(&self) -> String;
+}
+
+pub trait Datasource_ {
     fn extract_datasource_type(&self) -> String;
     fn extract_tf_id(&self) -> String;
     fn extract_value(&self) -> Value;
 }
 
 pub trait Resource {
-    fn resource_ref(&self) -> String;
+    fn extract_ref(&self) -> String;
 }
 
 pub trait Resource_ {
@@ -488,7 +504,7 @@ impl<T: Ref> Ref for ListRef<T> {
 
 impl<T: Ref> ListRef<T> {
     pub fn get(&self, index: usize) -> T {
-        T::new(format!("${{{}[{}]}}", &self.base, index))
+        T::new(format!("{}[{}]", &self.base, index))
     }
 }
 
@@ -508,7 +524,7 @@ impl<T: Ref> Ref for MapRef<T> {
 
 impl<T: Ref> MapRef<T> {
     pub fn get(&self, key: impl ToString) -> T {
-        T::new(format!("${{{}[\"{}\"]}}", &self.base, key.to_string()))
+        T::new(format!("{}[\"{}\"]", &self.base, key.to_string()))
     }
 }
 
@@ -530,6 +546,7 @@ struct VariableImplData {
 
 struct Variable_<T: PrimitiveType> {
     tf_id: String,
+    sentinel: String,
     data: RefCell<VariableImplData>,
     _p: PhantomData<T>,
 }
@@ -557,21 +574,17 @@ impl<T: PrimitiveType> Variable<T> {
         self.0.data.borrow_mut().sensitive = v.into();
         self
     }
-
-    fn to_expr_str(&self) -> String {
-        format!("${{var.{}}}", self.0.tf_id)
-    }
 }
 
 impl<T: PrimitiveType> Into<Primitive<T>> for &Variable<T> {
     fn into(self) -> Primitive<T> {
-        Primitive::Sentinel(self.to_expr_str())
+        Primitive::Sentinel(self.0.sentinel.clone())
     }
 }
 
 impl<T: PrimitiveType> ToString for &Variable<T> {
     fn to_string(&self) -> String {
-        self.to_expr_str()
+        self.0.sentinel.clone()
     }
 }
 
@@ -582,6 +595,7 @@ pub struct BuildVariable {
 impl BuildVariable {
     pub fn build<T: PrimitiveType + 'static>(self, stack: &mut Stack) -> Variable<T> {
         let out = Variable(Rc::new(Variable_ {
+            sentinel: stack.add_sentinel(format!("${{var.{}}}", self.tf_id)),
             tf_id: self.tf_id,
             data: RefCell::new(VariableImplData {
                 r#type: T::extract_variable_type(),

@@ -348,7 +348,7 @@ fn main() {
                     #[derive(Clone)] pub struct #resource_ident(Rc < #resource_inner_ident >);
                     impl #resource_ident {
                         pub fn depends_on(self, dep: &impl Resource) -> Self {
-                            self.0.data.borrow_mut().depends_on.push(dep.resource_ref());
+                            self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
                         }
                         pub fn set_provider(self, provider:& #provider_ident) -> Self {
@@ -389,7 +389,7 @@ fn main() {
                             self
                         }
                         pub fn replace_triggered_by_resource(self, r: &impl Resource) -> Self {
-                            self.0.data.borrow_mut().lifecycle.replace_triggered_by.push(r.resource_ref());
+                            self.0.data.borrow_mut().lifecycle.replace_triggered_by.push(r.extract_ref());
                             self
                         }
                         pub fn replace_triggered_by_attr(self, attr: impl ToString) -> Self {
@@ -399,7 +399,7 @@ fn main() {
                         #(#resource_mut_methods) * #(#resource_ref_methods) *
                     }
                     impl Resource for #resource_ident {
-                        fn resource_ref(&self) -> String {
+                        fn extract_ref(&self) -> String {
                             format!("{}.{}", self.0.extract_resource_type(), self.0.extract_tf_id())
                         }
                     }
@@ -489,7 +489,12 @@ fn main() {
                         #(#datasource_mut_methods) * #(#datasource_ref_methods) *
                     }
                     #[derive(Clone)] pub struct #datasource_ident(Rc < #datasource_inner_ident >);
-                    impl Datasource for #datasource_inner_ident {
+                    impl Datasource for #datasource_ident {
+                        fn extract_ref(&self) -> String {
+                            format!("data.{}.{}", self.0.extract_datasource_type(), self.0.extract_tf_id())
+                        }
+                    }
+                    impl Datasource_ for #datasource_inner_ident {
                         fn extract_datasource_type(&self) -> String {
                             #datasource_name.into()
                         }
