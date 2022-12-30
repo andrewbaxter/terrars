@@ -504,6 +504,71 @@ impl<T: PrimitiveType> Into<Primitive<T>> for &VariableImpl<T> {
     }
 }
 
+// References
+pub trait Ref {
+    fn new(base: String) -> Self;
+}
+
+pub struct PrimRef<T: PrimitiveType> {
+    base: String,
+    _pd: PhantomData<T>,
+}
+
+impl<T: PrimitiveType> Ref for PrimRef<T> {
+    fn new(base: String) -> PrimRef<T> {
+        PrimRef {
+            base: base,
+            _pd: Default::default(),
+        }
+    }
+}
+
+impl<T: PrimitiveType> PrimRef<T> {
+    pub fn to_string(&self, stack: &mut Stack) -> Primitive<T> {
+        Primitive::Sentinel(stack.add_sentinel(format!("${{{}}}", self.base)))
+    }
+}
+
+pub struct ListRef<T: Ref> {
+    base: String,
+    _pd: PhantomData<T>,
+}
+
+impl<T: Ref> Ref for ListRef<T> {
+    fn new(base: String) -> Self {
+        ListRef {
+            base: base,
+            _pd: Default::default(),
+        }
+    }
+}
+
+impl<T: Ref> ListRef<T> {
+    pub fn get(&self, index: usize) -> T {
+        T::new(format!("${{{}[{}]}}", &self.base, index))
+    }
+}
+
+pub struct MapRef<T: Ref> {
+    base: String,
+    _pd: PhantomData<T>,
+}
+
+impl<T: Ref> Ref for MapRef<T> {
+    fn new(base: String) -> Self {
+        MapRef {
+            base: base,
+            _pd: Default::default(),
+        }
+    }
+}
+
+impl<T: Ref> MapRef<T> {
+    pub fn get(&self, key: impl ToString) -> T {
+        T::new(format!("${{{}[\"{}\"]}}", &self.base, key.to_string()))
+    }
+}
+
 /// Create a new variable.
 pub struct BuildVariable {
     pub tf_id: String,

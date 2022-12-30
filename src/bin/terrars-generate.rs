@@ -204,13 +204,7 @@ fn main() {
             let provider_type_fn = format_ident!("provider_{}", provider_snake_name);
             let provider_data_name = format_ident!("Provider{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
-            generate_fields(
-                &mut raw_fields,
-                "",
-                &provider_name_parts,
-                &provider_schema.provider.block.attributes,
-                true,
-            );
+            generate_fields(&mut raw_fields, &provider_name_parts, &provider_schema.provider.block.attributes, true);
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
             let extra_types = raw_fields.extra_types;
@@ -313,14 +307,8 @@ fn main() {
             let camel_name = to_camel(&use_name_parts);
             let resource_data_ident = format_ident!("{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
-            generate_fields(&mut raw_fields, &resource_name, &use_name_parts, &resource.block.attributes, true);
-            generate_block_fields(
-                &mut raw_fields,
-                &resource_name,
-                &use_name_parts,
-                &resource.block.block_types,
-                true,
-            );
+            generate_fields(&mut raw_fields, &use_name_parts, &resource.block.attributes, true);
+            generate_block_fields(&mut raw_fields, &use_name_parts, &resource.block.block_types, true);
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
             let extra_types = raw_fields.extra_types;
@@ -453,14 +441,8 @@ fn main() {
             let camel_name = to_camel(&use_name_parts);
             let datasource_data_ident = format_ident!("{}Data", camel_name);
             let mut raw_fields = TopLevelFields::default();
-            generate_fields(&mut raw_fields, &datasource_name, &use_name_parts, &datasource.block.attributes, true);
-            generate_block_fields(
-                &mut raw_fields,
-                &datasource_name,
-                &use_name_parts,
-                &datasource.block.block_types,
-                true,
-            );
+            generate_fields(&mut raw_fields, &use_name_parts, &datasource.block.attributes, true);
+            generate_block_fields(&mut raw_fields, &use_name_parts, &datasource.block.block_types, true);
             let builder_fields = raw_fields.builder_fields;
             let copy_builder_fields = raw_fields.copy_builder_fields;
             let extra_types = raw_fields.extra_types;

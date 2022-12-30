@@ -78,6 +78,7 @@ pub enum DescriptionKind {
     Markdown,
 }
 
+#[derive(Debug)]
 pub enum ValueBehaviorHelper {
     UserRequired,
     UserOptional,
