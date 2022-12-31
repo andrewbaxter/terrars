@@ -342,6 +342,7 @@ fn main() {
                         #(#resource_fields,) *
                     }
                     struct #resource_inner_ident {
+                        shared: StackShared,
                         tf_id: String,
                         data: RefCell < #resource_inner_mut_ident >,
                     }
@@ -421,6 +422,7 @@ fn main() {
                     impl #resource_builder_ident {
                         pub fn build(self, stack: &mut Stack) -> #resource_ident {
                             let out = #resource_ident(Rc:: new(#resource_inner_ident {
+                                shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
                                 data: RefCell:: new(#resource_inner_mut_ident {
                                     depends_on: core::default::Default::default(),
@@ -478,6 +480,7 @@ fn main() {
                         #(#datasource_fields,) *
                     }
                     struct #datasource_inner_ident {
+                        shared: StackShared,
                         tf_id: String,
                         data: RefCell < #datasource_inner_mut_ident >,
                     }
@@ -512,6 +515,7 @@ fn main() {
                     impl #datasource_builder_ident {
                         pub fn build(self, stack: &mut Stack) -> #datasource_ident {
                             let out = #datasource_ident(Rc:: new(#datasource_inner_ident {
+                                shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
                                 data: RefCell:: new(#datasource_inner_mut_ident {
                                     provider: None,

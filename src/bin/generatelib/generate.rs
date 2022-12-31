@@ -27,7 +27,7 @@ pub fn generate_simple_type(t: &ScalarTypeKey) -> (TokenStream, Option<(TokenStr
         ScalarTypeKey::String => quote!(String),
         ScalarTypeKey::Bool => quote!(bool),
     };
-    (quote!(Primitive < #raw >), Some((quote!(PrimRef), quote!(PrimRef < #raw >))))
+    (quote!(Primitive < #raw >), Some((quote!(PrimExpr), quote!(PrimExpr < #raw >))))
 }
 
 pub fn add_path(v: &Vec<String>, e: &str) -> Vec<String> {
@@ -196,12 +196,12 @@ pub fn generate_field(
         if self_has_identity {
             let ref_fmt = format!("{{}}.{}", k);
             out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-                #t1:: new(format!(#ref_fmt, self.extract_ref()))
+                #t1:: new(self.0.shared.clone(), format!(#ref_fmt, self.extract_ref()))
             }));
         }
         let ref_ref_fmt = format!("{{}}.{}", k);
         out.ref_ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-            #t1:: new(format!(#ref_ref_fmt, self.base))
+            #t1:: new(self.shared.clone(), format!(#ref_ref_fmt, self.base))
         }));
     }
 }
@@ -429,11 +429,13 @@ pub fn generate_nonident_rust_type(
             }
         }
         pub struct #obj_ref_ident {
+            shared: StackShared,
             base: String
         }
         impl Ref for #obj_ref_ident {
-            fn new(base: String) -> #obj_ref_ident {
+            fn new(shared: StackShared, base: String) -> #obj_ref_ident {
                 #obj_ref_ident {
+                    shared: shared,
                     base: base.to_string(),
                 }
             }

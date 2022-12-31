@@ -67,7 +67,7 @@ impl BuildStack {
             datasources: Default::default(),
             resources: Default::default(),
             outputs: Default::default(),
-            replace_exprs: Default::default(),
+            shared: StackShared(Rc::new(RefCell::new(StackShared_ { replace_exprs: Default::default() }))),
         };
     }
 }
@@ -111,6 +111,22 @@ pub enum RunError {
     CommandError(Command, process::ExitStatus),
 }
 
+struct StackShared_ {
+    replace_exprs: Vec<(String, String)>,
+}
+
+#[derive(Clone)]
+pub struct StackShared(Rc<RefCell<StackShared_>>);
+
+impl StackShared {
+    pub fn add_sentinel(&self, v: &str) -> String {
+        let mut m = self.0.borrow_mut();
+        let k = format!("_TERRARS_SENTINEL_{}_", m.replace_exprs.len());
+        m.replace_exprs.push((k.clone(), format!("${{{}}}", v)));
+        k
+    }
+}
+
 pub struct Stack {
     provider_types: Vec<Rc<dyn ProviderType>>,
     providers: Vec<Rc<dyn Provider>>,
@@ -118,7 +134,7 @@ pub struct Stack {
     datasources: Vec<Rc<dyn Datasource_>>,
     resources: Vec<Rc<dyn Resource_>>,
     outputs: Vec<Rc<dyn Output>>,
-    replace_exprs: Vec<(String, String)>,
+    pub shared: StackShared,
 }
 
 thread_local!{
@@ -126,10 +142,30 @@ thread_local!{
 }
 
 impl Stack {
+    pub fn string(&self, val: impl ToString) -> PrimExpr<String> {
+        PrimExpr(self.shared.clone(), format!("\"{}\"", val.to_string().replace("\"", "\\\"")), Default::default())
+    }
+
+    pub fn bool(&self, val: bool) -> PrimExpr<bool> {
+        PrimExpr(self.shared.clone(), if val {
+            "true"
+        } else {
+            "false"
+        }.into(), Default::default())
+    }
+
+    pub fn i64(&self, val: i64) -> PrimExpr<i64> {
+        PrimExpr(self.shared.clone(), val.to_string(), Default::default())
+    }
+
+    pub fn f64(&self, val: f64) -> PrimExpr<f64> {
+        PrimExpr(self.shared.clone(), val.to_string(), Default::default())
+    }
+
     /// Convert the stack to json bytes.
     pub fn serialize(&self, state_path: &Path) -> Result<Vec<u8>, StackError> {
         REPLACE_EXPRS.with(move |f| {
-            *f.borrow_mut() = Some(self.replace_exprs.clone());
+            *f.borrow_mut() = Some(self.shared.0.borrow().replace_exprs.clone());
         });
         let mut required_providers = BTreeMap::new();
         for p in &self.provider_types {
@@ -216,12 +252,6 @@ impl Stack {
 
     pub fn add_resource(&mut self, v: Rc<dyn Resource_>) {
         self.resources.push(v);
-    }
-
-    pub fn add_sentinel(&mut self, v: String) -> String {
-        let k = format!("_TERRARS_SENTINEL_{}_", self.replace_exprs.len());
-        self.replace_exprs.push((k.clone(), v));
-        k
     }
 
     /// Serialize the stack to a file and run a Terraform command on it. If variables are
@@ -464,80 +494,113 @@ pub trait Resource_ {
 }
 
 // Expressions
-pub trait TfExpr {
-    fn to_string(&self, stack: &mut Stack) -> String {
-        stack.add_sentinel(format!("${{{}}}", self.raw()))
-    }
-
-    fn to_prim<T: PrimitiveType>(&self, stack: &mut Stack) -> Primitive<T> {
-        Primitive::Sentinel(self.to_string(stack))
-    }
-    fn raw(&self) -> String;
+pub trait Expr<T: PrimitiveType> {
+    fn expr_raw(&self) -> (&StackShared, String);
+    fn expr_sentinel(&self) -> String;
 }
 
-pub struct PrimExpr(String);
+// More crazy rust limitation workarounds
+macro_rules! manual_expr_impls{
+    ($t: ident) => {
+        impl < T: PrimitiveType > Into < String > for $t < T > {
+            fn into(self) -> String {
+                self.expr_sentinel()
+            }
+        }
+        impl < T: PrimitiveType > Into < String > for & $t < T > {
+            fn into(self) -> String {
+                self.expr_sentinel()
+            }
+        }
+        impl < T: PrimitiveType > Display for $t < T > {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.expr_sentinel().fmt(f)
+            }
+        }
+        impl < T: PrimitiveType > Into < Primitive < T >> for $t < T > {
+            fn into(self) -> Primitive<T> {
+                Primitive::Sentinel(self.expr_sentinel())
+            }
+        }
+        impl < T: PrimitiveType > Into < Primitive < T >> for & $t < T > {
+            fn into(self) -> Primitive<T> {
+                Primitive::Sentinel(self.expr_sentinel())
+            }
+        }
+        impl Into < PrimExpr < String >> for $t < bool > {
+            fn into(self) -> PrimExpr<String> {
+                let (shared, raw) = self.expr_raw();
+                PrimExpr(shared.clone(), raw, Default::default())
+            }
+        }
+        impl Into < PrimExpr < String >> for & $t < bool > {
+            fn into(self) -> PrimExpr<String> {
+                let (shared, raw) = self.expr_raw();
+                PrimExpr(shared.clone(), raw, Default::default())
+            }
+        }
+        impl Into < PrimExpr < String >> for $t < i64 > {
+            fn into(self) -> PrimExpr<String> {
+                let (shared, raw) = self.expr_raw();
+                PrimExpr(shared.clone(), raw, Default::default())
+            }
+        }
+        impl Into < PrimExpr < String >> for & $t < i64 > {
+            fn into(self) -> PrimExpr<String> {
+                let (shared, raw) = self.expr_raw();
+                PrimExpr(shared.clone(), raw, Default::default())
+            }
+        }
+        impl Into < PrimExpr < String >> for $t < f64 > {
+            fn into(self) -> PrimExpr<String> {
+                let (shared, raw) = self.expr_raw();
+                PrimExpr(shared.clone(), raw, Default::default())
+            }
+        }
+        impl Into < PrimExpr < String >> for & $t < f64 > {
+            fn into(self) -> PrimExpr<String> {
+                let (shared, raw) = self.expr_raw();
+                PrimExpr(shared.clone(), raw, Default::default())
+            }
+        }
+    };
+}
 
-impl PrimExpr {
-    pub fn str(val: impl ToString) -> PrimExpr {
-        PrimExpr(format!("\"{}\"", val.to_string().replace("\"", "\\\"")))
+pub struct PrimExpr<T: PrimitiveType>(StackShared, String, PhantomData<T>);
+
+impl<T: PrimitiveType> Expr<T> for PrimExpr<T> {
+    fn expr_raw(&self) -> (&StackShared, String) {
+        (&self.0, self.1.clone())
     }
 
-    pub fn bool(val: bool) -> PrimExpr {
-        PrimExpr(if val {
-            "true"
-        } else {
-            "false"
-        }.into())
-    }
-
-    pub fn i64(val: i64) -> PrimExpr {
-        PrimExpr(val.to_string())
-    }
-
-    pub fn f64(val: f64) -> PrimExpr {
-        PrimExpr(val.to_string())
+    fn expr_sentinel(&self) -> String {
+        self.0.add_sentinel(&self.1)
     }
 }
 
-impl TfExpr for PrimExpr {
-    fn raw(&self) -> String {
-        self.0.clone()
-    }
-}
+manual_expr_impls!(PrimExpr);
 
 // References
 pub trait Ref {
-    fn new(base: String) -> Self;
+    fn new(shared: StackShared, base: String) -> Self;
 }
 
-pub struct PrimRef<T: PrimitiveType> {
-    base: String,
-    _pd: PhantomData<T>,
-}
-
-impl<T: PrimitiveType> Ref for PrimRef<T> {
-    fn new(base: String) -> PrimRef<T> {
-        PrimRef {
-            base: base,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<T: PrimitiveType> TfExpr for PrimRef<T> {
-    fn raw(&self) -> String {
-        self.base.clone()
+impl<T: PrimitiveType> Ref for PrimExpr<T> {
+    fn new(shared: StackShared, base: String) -> PrimExpr<T> {
+        PrimExpr(shared, base, Default::default())
     }
 }
 
 pub struct ListRef<T: Ref> {
+    shared: StackShared,
     base: String,
     _pd: PhantomData<T>,
 }
 
 impl<T: Ref> Ref for ListRef<T> {
-    fn new(base: String) -> Self {
+    fn new(shared: StackShared, base: String) -> Self {
         ListRef {
+            shared: shared,
             base: base,
             _pd: Default::default(),
         }
@@ -546,18 +609,20 @@ impl<T: Ref> Ref for ListRef<T> {
 
 impl<T: Ref> ListRef<T> {
     pub fn get(&self, index: usize) -> T {
-        T::new(format!("{}[{}]", &self.base, index))
+        T::new(self.shared.clone(), format!("{}[{}]", &self.base, index))
     }
 }
 
 pub struct MapRef<T: Ref> {
+    shared: StackShared,
     base: String,
     _pd: PhantomData<T>,
 }
 
 impl<T: Ref> Ref for MapRef<T> {
-    fn new(base: String) -> Self {
+    fn new(shared: StackShared, base: String) -> Self {
         MapRef {
+            shared: shared,
             base: base,
             _pd: Default::default(),
         }
@@ -566,7 +631,7 @@ impl<T: Ref> Ref for MapRef<T> {
 
 impl<T: Ref> MapRef<T> {
     pub fn get(&self, key: impl ToString) -> T {
-        T::new(format!("{}[\"{}\"]", &self.base, key.to_string()))
+        T::new(self.shared.clone(), format!("{}[\"{}\"]", &self.base, key.to_string()))
     }
 }
 
@@ -587,8 +652,8 @@ struct VariableImplData {
 }
 
 struct Variable_<T: PrimitiveType> {
+    shared: StackShared,
     tf_id: String,
-    sentinel: String,
     data: RefCell<VariableImplData>,
     _p: PhantomData<T>,
 }
@@ -618,17 +683,18 @@ impl<T: PrimitiveType> Variable<T> {
     }
 }
 
-impl<T: PrimitiveType> Into<Primitive<T>> for &Variable<T> {
-    fn into(self) -> Primitive<T> {
-        Primitive::Sentinel(self.0.sentinel.clone())
+impl<T: PrimitiveType> Expr<T> for Variable<T> {
+    fn expr_raw(&self) -> (&StackShared, String) {
+        (&self.0.shared, format!("var.{}", self.0.tf_id))
+    }
+
+    fn expr_sentinel(&self) -> String {
+        let (shared, raw) = self.expr_raw();
+        shared.add_sentinel(&raw)
     }
 }
 
-impl<T: PrimitiveType> ToString for &Variable<T> {
-    fn to_string(&self) -> String {
-        self.0.sentinel.clone()
-    }
-}
+manual_expr_impls!(Variable);
 
 pub struct BuildVariable {
     pub tf_id: String,
@@ -637,7 +703,7 @@ pub struct BuildVariable {
 impl BuildVariable {
     pub fn build<T: PrimitiveType + 'static>(self, stack: &mut Stack) -> Variable<T> {
         let out = Variable(Rc::new(Variable_ {
-            sentinel: stack.add_sentinel(format!("${{var.{}}}", self.tf_id)),
+            shared: stack.shared.clone(),
             tf_id: self.tf_id,
             data: RefCell::new(VariableImplData {
                 r#type: T::extract_variable_type(),
@@ -674,12 +740,6 @@ impl<T: PrimitiveType> OutputImpl<T> {
     pub fn set_sensitive(&self, v: impl Into<Primitive<bool>>) -> &Self {
         self.data.borrow_mut().sensitive = v.into();
         self
-    }
-}
-
-impl<T: PrimitiveType> Into<Primitive<T>> for &OutputImpl<T> {
-    fn into(self) -> Primitive<T> {
-        Primitive::Sentinel(format!("${{variable.{}}}", self.tf_id))
     }
 }
 
@@ -744,10 +804,17 @@ macro_rules! primvec{
 }
 
 // Functions
-pub fn tf_base64encode(e: impl TfExpr) -> PrimExpr {
-    PrimExpr(format!("base64encode({})", e.raw()))
+pub fn tf_base64encode(e: PrimExpr<String>) -> PrimExpr<String> {
+    let (shared, raw) = e.expr_raw();
+    PrimExpr(shared.clone(), format!("base64encode({})", raw), Default::default())
 }
 
-pub fn tf_base64decode(e: impl TfExpr) -> PrimExpr {
-    PrimExpr(format!("base64decode({})", e.raw()))
+pub fn tf_base64decode(e: PrimExpr<String>) -> PrimExpr<String> {
+    let (shared, raw) = e.expr_raw();
+    PrimExpr(shared.clone(), format!("base64decode({})", raw), Default::default())
+}
+
+pub fn tf_substr(e: PrimExpr<String>, offset: usize, length: usize) -> PrimExpr<String> {
+    let (shared, raw) = e.expr_raw();
+    PrimExpr(shared.clone(), format!("substr({}, {}, {})", raw, offset, length), Default::default())
 }

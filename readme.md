@@ -40,9 +40,11 @@ Terrars also provides a command, `terrars-generate`, which generates Rust code f
    }
    ```
 
+   `tfschema/aws` must be an otherwise unused directory - it will be wiped when you genenerate the code.
+
    Run `cargo install terrars`, then `terrars-generate terrars_aws.json`.
 
-   Create a `src/bin/mydeploy/tfschema/mod.rs` file with this contents to root the generated provider:
+   The first time you do this, create a `src/bin/mydeploy/tfschema/mod.rs` file with this contents to root the generated provider:
 
    ```
    pub mod aws;
