@@ -463,6 +463,48 @@ pub trait Resource_ {
     fn extract_value(&self) -> Value;
 }
 
+// Expressions
+pub trait TfExpr {
+    fn to_string(&self, stack: &mut Stack) -> String {
+        stack.add_sentinel(format!("${{{}}}", self.raw()))
+    }
+
+    fn to_prim<T: PrimitiveType>(&self, stack: &mut Stack) -> Primitive<T> {
+        Primitive::Sentinel(self.to_string(stack))
+    }
+    fn raw(&self) -> String;
+}
+
+pub struct PrimExpr(String);
+
+impl PrimExpr {
+    pub fn str(val: impl ToString) -> PrimExpr {
+        PrimExpr(format!("\"{}\"", val.to_string().replace("\"", "\\\"")))
+    }
+
+    pub fn bool(val: bool) -> PrimExpr {
+        PrimExpr(if val {
+            "true"
+        } else {
+            "false"
+        }.into())
+    }
+
+    pub fn i64(val: i64) -> PrimExpr {
+        PrimExpr(val.to_string())
+    }
+
+    pub fn f64(val: f64) -> PrimExpr {
+        PrimExpr(val.to_string())
+    }
+}
+
+impl TfExpr for PrimExpr {
+    fn raw(&self) -> String {
+        self.0.clone()
+    }
+}
+
 // References
 pub trait Ref {
     fn new(base: String) -> Self;
@@ -482,9 +524,9 @@ impl<T: PrimitiveType> Ref for PrimRef<T> {
     }
 }
 
-impl<T: PrimitiveType> PrimRef<T> {
-    pub fn to_string(&self, stack: &mut Stack) -> Primitive<T> {
-        Primitive::Sentinel(stack.add_sentinel(format!("${{{}}}", self.base)))
+impl<T: PrimitiveType> TfExpr for PrimRef<T> {
+    fn raw(&self) -> String {
+        self.base.clone()
     }
 }
 
@@ -699,4 +741,13 @@ macro_rules! primvec{
     ($($e: expr), *) => {
         vec![$(terrars:: Primitive:: from($e)), *]
     };
+}
+
+// Functions
+pub fn tf_base64encode(e: impl TfExpr) -> PrimExpr {
+    PrimExpr(format!("base64encode({})", e.raw()))
+}
+
+pub fn tf_base64decode(e: impl TfExpr) -> PrimExpr {
+    PrimExpr(format!("base64decode({})", e.raw()))
 }

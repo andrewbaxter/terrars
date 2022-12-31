@@ -42,7 +42,7 @@ Terrars also provides a command, `terrars-generate`, which generates Rust code f
 
    Run `cargo install terrars`, then `terrars-generate terrars_aws.json`.
 
-   Edit the parent `mod`/`lib.rs` file to root the generated provider:
+   Create a `src/bin/mydeploy/tfschema/mod.rs` file with this contents to root the generated provider:
 
    ```
    pub mod aws;
@@ -94,7 +94,11 @@ The base library has `BuildStack`, `BuildVariable` and `BuildOutput` structs for
 
 In general `Build*` structs have required fields and a `build()` method that makes the object usable and registers it with the `Stack`.
 
-# Expressions/template strings/interpolation/escaping
+# How it works
+
+Terraform provides a method to output provider schemas as json. This tool uses that schema to generate structures that would output matching json Terraform stack files.
+
+## Expressions/template strings/interpolation/escaping
 
 Take as an example:
 
@@ -108,17 +112,11 @@ For now Terrars uses a simple (somewhat dirty) hack to avoid this. All expressio
 
 This way, all normal string formatting methods should retain the expected expressions.
 
-It remains to be seen how to support base64.
-
 # Current limitations and warnings
-
-- Limited name sanitization
-
-  If a provider field or resource name clashes with a rust keyword or metavalue name things may fail to compile.
 
 - Not all Terraform features have been implemented
 
-  The only ones I'm aware of missing at the moment are resource "provisioning" and collection type references.
+  The only ones I'm aware of missing at the moment is resource "provisioning".
 
 - `ignore_changes` takes strings rather than an enum
 
