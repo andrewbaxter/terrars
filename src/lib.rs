@@ -142,6 +142,14 @@ thread_local!{
 }
 
 impl Stack {
+    pub fn str_expr(&self, expr: impl ToString) -> PrimExpr<String> {
+        PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
+    }
+
+    pub fn expr<T: PrimitiveType>(&self, expr: impl ToString) -> PrimExpr<T> {
+        PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
+    }
+
     pub fn string(&self, val: impl ToString) -> PrimExpr<String> {
         PrimExpr(self.shared.clone(), format!("\"{}\"", val.to_string().replace("\"", "\\\"")), Default::default())
     }

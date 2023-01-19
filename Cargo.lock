@@ -291,9 +291,7 @@ dependencies = [
 
 [[package]]
 name = "genemichaels"
-version = "0.1.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3460be663228d5607ca5935c43d5a70cf2691d6ab7bfda0c86fdb313b54603fd"
+version = "0.1.16"
 dependencies = [
  "anyhow",
  "clap",
@@ -477,8 +475,7 @@ dependencies = [
 [[package]]
 name = "markdown"
 version = "1.0.0-alpha.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e15a8b67b7a9cb4bfbda3131ab091529c338174c78da8d46adbce1e510daf191"
+source = "git+https://github.com/wooorm/markdown-rs?rev=af202d3f0ea24e0a957b02a6f9fb23c6c3b4afe7#af202d3f0ea24e0a957b02a6f9fb23c6c3b4afe7"
 dependencies = [
  "log",
  "unicode-id",

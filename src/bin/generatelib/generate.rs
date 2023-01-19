@@ -216,18 +216,13 @@ fn generate_type(
         (Some(ValueSchema::AggColl(at)), None) => generate_agg_type_coll(extra_types, path, at.as_ref()),
         (Some(ValueSchema::AggObject(at)), None) => generate_agg_type_obj(extra_types, path, at.as_ref()),
         (None, Some(x)) => match x.nesting_mode {
-            super::sourceschema::NestingMode::List => {
+            super::sourceschema::NestingMode::List | super::sourceschema::NestingMode::Set => {
                 let (element_type, element_ref_type) =
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
                     quote!(Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
                 )
-            },
-            super::sourceschema::NestingMode::Set => {
-                let (element_type, _) =
-                    generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
-                (quote!(Vec < #element_type >), None)
             },
             super::sourceschema::NestingMode::Single => unreachable!(),
         },
@@ -263,15 +258,7 @@ fn generate_agg_type_coll(
     at: &AggCollType,
 ) -> (TokenStream, Option<(TokenStream, TokenStream)>) {
     match at.0 {
-        AggCollTypeKey::Set => {
-            let (element_type, _) = match &at.1 {
-                ValueSchema::Simple(t) => generate_simple_type(&t),
-                ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, &add_path(&path, "el"), a.as_ref()),
-                ValueSchema::AggObject(a) => generate_agg_type_obj(extra_types, &add_path(&path, "el"), a.as_ref()),
-            };
-            (quote!(std:: vec:: Vec < #element_type >), None)
-        },
-        AggCollTypeKey::List => {
+        AggCollTypeKey::List | AggCollTypeKey::Set => {
             let (element_type, element_ref_type) = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
                 ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, &add_path(&path, "el"), a.as_ref()),

@@ -484,14 +484,14 @@ fn main() {
                         tf_id: String,
                         data: RefCell < #datasource_inner_mut_ident >,
                     }
-                    impl #datasource_inner_ident {
+                    #[derive(Clone)] pub struct #datasource_ident(Rc < #datasource_inner_ident >);
+                    impl #datasource_ident {
                         pub fn set_provider(&self, provider:& #provider_ident) ->& Self {
-                            self.data.borrow_mut().provider = Some(provider.provider_ref());
+                            self.0.data.borrow_mut().provider = Some(provider.provider_ref());
                             self
                         }
                         #(#datasource_mut_methods) * #(#datasource_ref_methods) *
                     }
-                    #[derive(Clone)] pub struct #datasource_ident(Rc < #datasource_inner_ident >);
                     impl Datasource for #datasource_ident {
                         fn extract_ref(&self) -> String {
                             format!("data.{}.{}", self.0.extract_datasource_type(), self.0.extract_tf_id())
