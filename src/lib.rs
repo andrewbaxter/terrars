@@ -800,6 +800,7 @@ pub enum IgnoreChanges {
 pub struct ResourceLifecycle {
     pub create_before_destroy: bool,
     pub prevent_destroy: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_changes: Option<IgnoreChanges>,
     pub replace_triggered_by: Vec<String>,
 }
