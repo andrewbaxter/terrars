@@ -25,6 +25,7 @@ use std::{
     },
     rc::Rc,
     str::FromStr,
+    marker::PhantomData,
 };
 use serde::{
     de::DeserializeOwned,
@@ -38,6 +39,7 @@ use serde_json::{
 use thiserror::Error;
 
 pub(crate) mod utils;
+pub mod ref_;
 pub mod expr;
 pub mod func;
 pub mod list_field;
@@ -51,6 +53,7 @@ pub mod set_field;
 pub mod set_ref;
 pub mod variable;
 
+pub use ref_::*;
 pub use expr::*;
 pub use func::*;
 pub use list_field::*;
@@ -62,7 +65,7 @@ pub use prim_field::*;
 pub use prim_ref::*;
 pub use set_field::*;
 pub use set_ref::*;
-pub use utils::*;
+use utils::REPLACE_EXPRS;
 pub use variable::*;
 
 /// Use this to create a new stack.
@@ -384,4 +387,65 @@ pub struct ResourceLifecycle {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_changes: Option<IgnoreChanges>,
     pub replace_triggered_by: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct DynamicBlock<T: Serialize> {
+    pub for_each: String,
+    pub iterator: String,
+    pub content: T,
+}
+
+pub enum BlockAssignable<T: Serialize> {
+    Literal(Vec<T>),
+    Dynamic(DynamicBlock<T>),
+}
+
+impl<T: Serialize> From<Vec<T>> for BlockAssignable<T> {
+    fn from(value: Vec<T>) -> Self {
+        BlockAssignable::Literal(value)
+    }
+}
+
+impl<T: Serialize> From<DynamicBlock<T>> for BlockAssignable<T> {
+    fn from(value: DynamicBlock<T>) -> Self {
+        BlockAssignable::Dynamic(value)
+    }
+}
+
+pub trait SerdeSkipDefault {
+    fn is_default(&self) -> bool;
+    fn is_not_default(&self) -> bool;
+}
+
+impl<T: Default + PartialEq> SerdeSkipDefault for T {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    fn is_not_default(&self) -> bool {
+        !self.is_default()
+    }
+}
+
+pub struct MapKV<T: Ref> {
+    pub(crate) shared: StackShared,
+    pub(crate) _pd: PhantomData<T>,
+}
+
+impl<T: Ref> MapKV<T> {
+    pub(crate) fn new(shared: StackShared) -> Self {
+        Self {
+            shared: shared,
+            _pd: Default::default(),
+        }
+    }
+
+    pub fn key(&self) -> PrimExpr<String> {
+        PrimExpr::new(self.shared.clone(), "each.key".into())
+    }
+
+    pub fn value(&self) -> T {
+        T::new(self.shared.clone(), "each.value".into())
+    }
 }

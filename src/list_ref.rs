@@ -2,12 +2,13 @@ use std::marker::PhantomData;
 use crate::{
     StackShared,
     prim_ref::{
-        PrimRef,
         PrimExpr,
     },
     rec_ref::{
         ListToRecMappable,
     },
+    MapKV,
+    Ref,
 };
 
 pub trait ToListMappable {
@@ -28,7 +29,7 @@ pub struct ListRef<T> {
     _pd: PhantomData<T>,
 }
 
-impl<T> PrimRef for ListRef<T> {
+impl<T> Ref for ListRef<T> {
     fn new(shared: StackShared, base: String) -> Self {
         ListRef {
             shared: shared,
@@ -38,18 +39,18 @@ impl<T> PrimRef for ListRef<T> {
     }
 }
 
-impl<T: PrimRef> ListRef<T> {
+impl<T: Ref> ListRef<T> {
     pub fn get(&self, index: usize) -> T {
         T::new(self.shared.clone(), format!("{}[{}]", &self.base, index))
     }
 
-    pub fn map<O: ToListMappable>(&self, inner: impl FnOnce(T) -> O) -> O::O {
-        let out = inner(T::new(self.shared.clone(), "each.value".into()));
+    pub fn map<O: ToListMappable>(&self, inner: impl FnOnce(MapKV<T>) -> O) -> O::O {
+        let out = inner(MapKV::new(self.shared.clone()));
         out.do_map(self.base.clone())
     }
 
-    pub fn map_obj<O: ListToRecMappable>(&self, inner: impl FnOnce(T) -> (PrimExpr<String>, O)) -> O::O {
-        let (k, out) = inner(T::new(self.shared.clone(), "each.value".into()));
+    pub fn map_obj<O: ListToRecMappable>(&self, inner: impl FnOnce(MapKV<T>) -> (PrimExpr<String>, O)) -> O::O {
+        let (k, out) = inner(MapKV::new(self.shared.clone()));
         out.do_map_obj(self.base.clone(), k)
     }
 }
@@ -72,7 +73,7 @@ impl<T> MapListRef<T> {
     }
 }
 
-impl<T: PrimRef> MapListRef<T> {
+impl<T: Ref> MapListRef<T> {
     pub fn map<O: ToListMappable>(&self, inner: impl FnOnce(T) -> O) -> O::O {
         let out = inner(T::new(self.shared.clone(), self.map_base.to_string()));
         out.do_map(self.base.clone())

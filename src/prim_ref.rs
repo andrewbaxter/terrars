@@ -17,12 +17,9 @@ use crate::{
         ListToRecMappable,
         ToObjMappable,
     },
+    Ref,
 };
 use std::fmt::Display;
-
-pub trait PrimRef {
-    fn new(shared: StackShared, base: String) -> Self;
-}
 
 pub struct PrimExpr<T: PrimType>(pub(crate) StackShared, pub(crate) String, pub(crate) PhantomData<T>);
 
@@ -36,10 +33,16 @@ impl<T: PrimType> Expr<T> for PrimExpr<T> {
     }
 }
 
+impl<T: PrimType> PrimExpr<T> {
+    pub fn raw(&self) -> String {
+        self.1.clone()
+    }
+}
+
 manual_expr_impls!(PrimExpr);
 
 // References
-impl<T: PrimType> PrimRef for PrimExpr<T> {
+impl<T: PrimType> Ref for PrimExpr<T> {
     fn new(shared: StackShared, base: String) -> PrimExpr<T> {
         PrimExpr(shared, base, Default::default())
     }

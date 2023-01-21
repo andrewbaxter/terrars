@@ -6,7 +6,7 @@ use crate::{
         RecRef,
         MapRecRef,
     },
-    prim_ref::PrimRef,
+    ref_::Ref,
     list_ref::MapListRefToRec,
 };
 
@@ -32,31 +32,41 @@ impl<T> From<HashMap<String, T>> for RecField<T> {
     }
 }
 
-impl<T: PrimRef> From<&RecRef<T>> for RecField<T> {
+impl<T: Ref> From<&RecRef<T>> for RecField<T> {
     fn from(value: &RecRef<T>) -> Self {
         Self::Sentinel(value.shared.add_sentinel(&value.base))
     }
 }
 
-impl<T: PrimRef> From<&MapRecRef<T>> for RecField<T> {
+impl<T: Ref> From<&MapRecRef<T>> for RecField<T> {
     fn from(value: &MapRecRef<T>) -> Self {
         Self::Sentinel(
             value
                 .shared
                 .add_sentinel(
-                    &format!("{{for k, v in {}: {} => {}}}", value.base, value.map_base_key, value.map_base),
+                    &format!(
+                        "{{for each in [for k, v in {}: {{ key = k, value = v }}]: {} => {}}}",
+                        value.base,
+                        value.map_base_key,
+                        value.map_base
+                    ),
                 ),
         )
     }
 }
 
-impl<T: PrimRef> From<&MapListRefToRec<T>> for RecField<T> {
+impl<T: Ref> From<&MapListRefToRec<T>> for RecField<T> {
     fn from(value: &MapListRefToRec<T>) -> Self {
         Self::Sentinel(
             value
                 .shared
                 .add_sentinel(
-                    &format!("{{for each in {}: {} => {}}}", value.base, value.map_base_key, value.map_base),
+                    &format!(
+                        "{{for each in [for i, v in {}: {{ key = i, value = v }}]: {} => {}}}",
+                        value.base,
+                        value.map_base_key,
+                        value.map_base
+                    ),
                 ),
         )
     }

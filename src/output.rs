@@ -14,7 +14,7 @@ use crate::{
     PrimType,
     PrimField,
     Stack,
-    utils::SerdeSkipDefault,
+    SerdeSkipDefault,
 };
 
 pub(crate) trait Output {

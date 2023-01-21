@@ -21,7 +21,7 @@ use crate::{
         Expr,
     },
     manual_expr_impls,
-    utils::SerdeSkipDefault,
+    SerdeSkipDefault,
     Stack,
 };
 
@@ -80,6 +80,12 @@ impl<T: PrimType> Expr<T> for Variable<T> {
     fn expr_sentinel(&self) -> String {
         let (shared, raw) = self.expr_raw();
         shared.add_sentinel(&raw)
+    }
+}
+
+impl<T: PrimType> Variable<T> {
+    pub fn raw(&self) -> String {
+        self.expr_raw().1
     }
 }
 

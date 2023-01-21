@@ -115,6 +115,27 @@ pub struct TopLevelFields {
     pub mut_methods: Vec<TokenStream>,
     pub builder_fields: Vec<TokenStream>,
     pub copy_builder_fields: Vec<TokenStream>,
+    pub dynamic_block_fields: Vec<TokenStream>,
+}
+
+impl TopLevelFields {
+    pub fn finish(&mut self, camel_name: &str) {
+        if !self.dynamic_block_fields.is_empty() {
+            let dynamic_ident = format_ident!("{}Dynamic", camel_name);
+            let dynamic_fields = self.dynamic_block_fields.split_off(0);
+            self.extra_types.push(quote!{
+                #[derive(Serialize, Default)] struct #dynamic_ident {
+                    #(#dynamic_fields,) *
+                }
+            });
+            self.fields.push(quote!{
+                dynamic: #dynamic_ident
+            });
+            self.copy_builder_fields.push(quote!{
+                dynamic: Default::default()
+            });
+        };
+    }
 }
 
 pub fn generate_field(
@@ -125,6 +146,7 @@ pub fn generate_field(
     field_doc: &str,
     behavior: ValueBehaviorHelper,
     self_has_identity: bool,
+    block: Option<TokenStream>,
 ) {
     let (sanitized, sanitized_name) = sanitize(k);
     let field_name = format_ident!("{}", sanitized_name);
@@ -162,13 +184,35 @@ pub fn generate_field(
                         ),
                     );
             }
+            let pat_mut_self;
+            let access_mut_self;
             if self_has_identity {
+                pat_mut_self = quote!(self);
+                access_mut_self = quote!(self.0.data.borrow_mut());
+            } else {
+                pat_mut_self = quote!(mut self);
+                access_mut_self = quote!(self);
+            }
+            if let Some(block_type) = block {
+                out.dynamic_block_fields.push(quote!(#field_name: Option < DynamicBlock < #block_type >>));
                 out
                     .mut_methods
                     .push(
                         quote!(
-                            #[doc = #set_doc] pub fn #set_field_name(self, v: impl Into < #rust_field_type >) -> Self {
-                                self.0.data.borrow_mut().#field_name = Some(v.into());
+                            #[
+                                doc = #set_doc
+                            ] pub fn #set_field_name(
+                                #pat_mut_self,
+                                v: impl Into < BlockAssignable < #block_type >>
+                            ) -> Self {
+                                match v.into() {
+                                    BlockAssignable:: Literal(v) => {
+                                        #access_mut_self.#field_name = Some(v);
+                                    },
+                                    BlockAssignable:: Dynamic(d) => {
+                                        #access_mut_self.dynamic.#field_name = Some(d);
+                                    }
+                                }
                                 self
                             }
                         ),
@@ -180,8 +224,8 @@ pub fn generate_field(
                         quote!(
                             #[
                                 doc = #set_doc
-                            ] pub fn #set_field_name(mut self, v: impl Into < #rust_field_type >) -> Self {
-                                self.#field_name = Some(v.into());
+                            ] pub fn #set_field_name(#pat_mut_self, v: impl Into < #rust_field_type >) -> Self {
+                                #access_mut_self.#field_name = Some(v.into());
                                 self
                             }
                         ),
@@ -220,7 +264,7 @@ fn generate_type(
                 let (element_type, element_ref_type) =
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
-                    quote!(BlockListField < #element_type >),
+                    quote!(Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
                 )
             },
@@ -228,7 +272,7 @@ fn generate_type(
                 let (element_type, element_ref_type) =
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
-                    quote!(BlockSetField < #element_type >),
+                    quote!(Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(SetRef), quote!(SetRef < #r2 >))),
                 )
             },
@@ -326,23 +370,29 @@ pub fn generate_block_fields(
     for (k, v) in fields {
         let mut path = path.clone();
         path.extend(k.split("_").map(ToString::to_string));
-        let (rust_type, rust_ref_type) = match v.nesting_mode {
+        let rust_type;
+        let rust_ref_type;
+        let block_type;
+        match v.nesting_mode {
             NestingMode::List => {
                 let (element_type, element_ref_type) =
                     generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                (
-                    quote!(BlockListField < #element_type >),
-                    Some((quote!(ListRef), quote!(ListRef < #element_ref_type >))),
-                )
+                rust_type = quote!(Vec < #element_type >);
+                rust_ref_type = Some((quote!(ListRef), quote!(ListRef < #element_ref_type >)));
+                block_type = Some(element_type);
             },
             NestingMode::Set => {
                 let (element_type, _) = generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                (quote!(BlockSetField < #element_type >), None)
+                rust_type = quote!(Vec < #element_type >);
+                rust_ref_type = None;
+                block_type = Some(element_type);
             },
             NestingMode::Single => {
                 let (element_type, element_ref_type) =
                     generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                (element_type, Some((element_ref_type.clone(), element_ref_type)))
+                rust_type = element_type;
+                rust_ref_type = Some((element_ref_type.clone(), element_ref_type));
+                block_type = None;
             },
         };
         generate_field(
@@ -353,6 +403,7 @@ pub fn generate_block_fields(
             "",
             super::sourceschema::ValueBehaviorHelper::UserOptional,
             self_has_identity,
+            block_type,
         );
     }
 }
@@ -376,6 +427,7 @@ pub fn generate_fields_from_value_map(
             &v.description.as_ref().map(|s| s.clone()).unwrap_or_else(String::new),
             v.behavior(),
             self_has_identity,
+            None,
         );
     }
 }
@@ -398,6 +450,7 @@ pub fn generate_fields_from_valueschema_map(
             "",
             super::sourceschema::ValueBehaviorHelper::UserOptional,
             self_has_identity,
+            None,
         );
     }
 }
@@ -405,9 +458,10 @@ pub fn generate_fields_from_valueschema_map(
 pub fn generate_nonident_rust_type(
     extra_types: &mut Vec<TokenStream>,
     path: &Vec<String>,
-    raw_fields: TopLevelFields,
+    mut raw_fields: TopLevelFields,
 ) -> (TokenStream, TokenStream) {
     let camel_name = to_camel(&path);
+    raw_fields.finish(&camel_name);
     let builder_fields = raw_fields.builder_fields;
     let copy_builder_fields = raw_fields.copy_builder_fields;
     extra_types.extend(raw_fields.extra_types);
@@ -425,10 +479,11 @@ pub fn generate_nonident_rust_type(
             #(#resource_mut_methods) *
         }
         impl ToListMappable for #obj_ident {
-            type O = BlockListField < #obj_ident >;
+            type O = BlockAssignable < #obj_ident >;
             fn do_map(self, base: String) -> Self::O {
-                BlockListField::Dynamic(DynamicBlock {
+                BlockAssignable::Dynamic(DynamicBlock {
                     for_each: format!("${{{}}}", base),
+                    iterator: "each".into(),
                     content: self,
                 })
             }
@@ -447,7 +502,7 @@ pub fn generate_nonident_rust_type(
             shared: StackShared,
             base: String
         }
-        impl PrimRef for #obj_ref_ident {
+        impl Ref for #obj_ref_ident {
             fn new(shared: StackShared, base: String) -> #obj_ref_ident {
                 #obj_ref_ident {
                     shared: shared,

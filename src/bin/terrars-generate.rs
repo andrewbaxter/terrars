@@ -321,6 +321,7 @@ fn main() {
                 let mut raw_fields = TopLevelFields::default();
                 generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &resource.block.attributes, true);
                 generate_block_fields(&mut raw_fields, &use_name_parts, &resource.block.block_types, true);
+                raw_fields.finish(&camel_name);
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
                 let extra_types = raw_fields.extra_types;
@@ -453,7 +454,7 @@ fn main() {
                         shared: StackShared,
                         base: String
                     }
-                    impl PrimRef for #resource_ref_ident {
+                    impl Ref for #resource_ref_ident {
                         fn new(shared: StackShared, base: String) -> Self {
                             Self {
                                 shared: shared,
@@ -498,6 +499,7 @@ fn main() {
                 let mut raw_fields = TopLevelFields::default();
                 generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &datasource.block.attributes, true);
                 generate_block_fields(&mut raw_fields, &use_name_parts, &datasource.block.block_types, true);
+                raw_fields.finish(&camel_name);
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
                 let extra_types = raw_fields.extra_types;
@@ -579,7 +581,7 @@ fn main() {
                         shared: StackShared,
                         base: String
                     }
-                    impl PrimRef for #datasource_ref_ident {
+                    impl Ref for #datasource_ref_ident {
                         fn new(shared: StackShared, base: String) -> Self {
                             Self {
                                 shared: shared,
