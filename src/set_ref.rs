@@ -4,6 +4,7 @@ use crate::{
     ref_::Ref,
     list_ref::ToListMappable,
     MapKV,
+    ListRef,
 };
 
 // Implemented by things that can be mapped from a set data source
@@ -27,5 +28,9 @@ impl<T: Ref> SetRef<T> {
     pub fn map<O: ToListMappable>(&self, inner: impl FnOnce(MapKV<T>) -> O) -> O::O {
         let out = inner(MapKV::new(self.shared.clone()));
         out.do_map(self.base.clone())
+    }
+
+    pub fn as_list(self) -> ListRef<T> {
+        ListRef::new(self.shared, format!("tolist({})", self.base))
     }
 }
