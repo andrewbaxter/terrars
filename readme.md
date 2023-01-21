@@ -118,9 +118,11 @@ This way, all normal string formatting methods should retain the expected expres
 
 - Not all Terraform features have been implemented
 
-  The only ones I'm aware of missing at the moment is resource "provisioning".
+  The only one I'm aware of missing at the moment is resource "provisioning".
 
 - `ignore_changes` takes strings rather than an enum
+
+- `for_each` doesn't have type mapping capabilities
 
 - No variable or output static type checking
 

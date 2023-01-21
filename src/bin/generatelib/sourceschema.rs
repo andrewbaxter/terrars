@@ -48,7 +48,8 @@ pub enum ScalarTypeKey {
 pub enum AggCollTypeKey {
     Set,
     List,
-    Map,
+    #[serde(rename = "map")]
+    Rec,
 }
 
 #[derive(Deserialize)]
@@ -68,7 +69,7 @@ pub struct AggObjType(pub AggObjTypeKey, pub BTreeMap<String, ValueSchema>);
 pub enum ValueSchema {
     Simple(ScalarTypeKey),
     AggColl(Box<AggCollType>),
-    AggObject(Box<AggObjType>),
+    AggObj(Box<AggObjType>),
 }
 
 #[derive(Deserialize)]

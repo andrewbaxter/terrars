@@ -6,17 +6,14 @@ use std::{
         BTreeMap,
         HashMap,
     },
-    fmt::Display,
     fs::{
         self,
         create_dir_all,
     },
-    hash::Hash,
     io::{
         self,
         Write,
     },
-    marker::PhantomData,
     path::{
         Path,
         PathBuf,
@@ -40,20 +37,33 @@ use serde_json::{
 };
 use thiserror::Error;
 
-pub trait SerdeSkipDefault {
-    fn is_default(&self) -> bool;
-    fn is_not_default(&self) -> bool;
-}
+pub(crate) mod utils;
+pub mod expr;
+pub mod func;
+pub mod list_field;
+pub mod list_ref;
+pub mod rec_field;
+pub mod rec_ref;
+pub mod output;
+pub mod prim_field;
+pub mod prim_ref;
+pub mod set_field;
+pub mod set_ref;
+pub mod variable;
 
-impl<T: Default + PartialEq> SerdeSkipDefault for T {
-    fn is_default(&self) -> bool {
-        *self == Self::default()
-    }
-
-    fn is_not_default(&self) -> bool {
-        !self.is_default()
-    }
-}
+pub use expr::*;
+pub use func::*;
+pub use list_field::*;
+pub use list_ref::*;
+pub use rec_field::*;
+pub use rec_ref::*;
+pub use output::*;
+pub use prim_field::*;
+pub use prim_ref::*;
+pub use set_field::*;
+pub use set_ref::*;
+pub use utils::*;
+pub use variable::*;
 
 /// Use this to create a new stack.
 pub struct BuildStack {}
@@ -137,16 +147,12 @@ pub struct Stack {
     pub shared: StackShared,
 }
 
-thread_local!{
-    static REPLACE_EXPRS: RefCell<Option<Vec<(String, String)>>> = RefCell::new(None);
-}
-
 impl Stack {
     pub fn str_expr(&self, expr: impl ToString) -> PrimExpr<String> {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 
-    pub fn expr<T: PrimitiveType>(&self, expr: impl ToString) -> PrimExpr<T> {
+    pub fn expr<T: PrimType>(&self, expr: impl ToString) -> PrimExpr<T> {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 
@@ -326,151 +332,7 @@ impl Stack {
     }
 }
 
-// Primitives
-pub trait TfPrimitiveType {
-    fn extract_variable_type() -> String;
-    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer;
-}
-
-impl TfPrimitiveType for String {
-    fn extract_variable_type() -> String {
-        "string".into()
-    }
-
-    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        REPLACE_EXPRS.with(|f| {
-            if let Some(vs) = f.borrow().as_ref() {
-                let mut out = self.replace("%{", "%%{").replace("${", "$${");
-                for (k, v) in vs {
-                    out = out.replace(k, v);
-                }
-                out.serialize(serializer)
-            } else {
-                self.serialize(serializer)
-            }
-        })
-    }
-}
-
-impl TfPrimitiveType for bool {
-    fn extract_variable_type() -> String {
-        "bool".into()
-    }
-
-    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        self.serialize(serializer)
-    }
-}
-
-impl TfPrimitiveType for i64 {
-    fn extract_variable_type() -> String {
-        "int".into()
-    }
-
-    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        self.serialize(serializer)
-    }
-}
-
-impl TfPrimitiveType for f64 {
-    fn extract_variable_type() -> String {
-        "float".into()
-    }
-
-    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        self.serialize(serializer)
-    }
-}
-
-pub trait PrimitiveType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { }
-
-impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimitiveType for T { }
-
-/// In Terraform, all fields, regardless of whether a it's an int or bool or whatever,
-/// can also take references like `${}`. `Primitive` represents this sort of value.
-/// Base types `i64` `f64` `String` and `bool` are supported, and you should be able
-/// to convert to `Primitive` with `into()`. Resource methods will return typed
-/// references that can also be used here.
-#[derive(Clone)]
-pub enum Primitive<T: PrimitiveType> {
-    Literal(T),
-    Sentinel(String),
-}
-
-impl<T: PrimitiveType> Default for Primitive<T> {
-    fn default() -> Self {
-        Primitive::Literal(T::default())
-    }
-}
-
-impl<T: PrimitiveType + Hash> Hash for Primitive<T> {
-    // Conditional derive somehow?
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        core::mem::discriminant(self).hash(state);
-    }
-}
-
-impl<T: PrimitiveType + PartialEq> std::cmp::PartialEq for Primitive<T> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Literal(l0), Self::Literal(r0)) => l0 == r0,
-            (Self::Sentinel(l0), Self::Sentinel(r0)) => l0 == r0,
-            _ => false,
-        }
-    }
-}
-
-impl<T: PrimitiveType + std::cmp::Eq + PartialEq> std::cmp::Eq for Primitive<T> { }
-
-impl<T: PrimitiveType> Serialize for Primitive<T> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer {
-        match self {
-            Primitive::Literal(l) => l.serialize2(serializer),
-            Primitive::Sentinel(r) => r.serialize2(serializer),
-        }
-    }
-}
-
-impl<T: PrimitiveType> From<&T> for Primitive<T> {
-    fn from(v: &T) -> Self {
-        Primitive::Literal(v.clone())
-    }
-}
-
-impl<T: PrimitiveType> From<T> for Primitive<T> {
-    fn from(v: T) -> Self {
-        Primitive::Literal(v)
-    }
-}
-
-impl From<&str> for Primitive<String> {
-    fn from(v: &str) -> Self {
-        Primitive::Literal(v.to_string())
-    }
-}
-
-impl<T: PrimitiveType + Display> Display for Primitive<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Primitive::Literal(v) => v.fmt(f),
-            Primitive::Sentinel(v) => v.fmt(f),
-        }
-    }
-}
-
-// Generated traits
+// Primitives Generated traits
 pub trait ProviderType {
     fn extract_tf_id(&self) -> String;
     fn extract_required_provider(&self) -> Value;
@@ -501,287 +363,6 @@ pub trait Resource_ {
     fn extract_value(&self) -> Value;
 }
 
-// Expressions
-pub trait Expr<T: PrimitiveType> {
-    fn expr_raw(&self) -> (&StackShared, String);
-    fn expr_sentinel(&self) -> String;
-}
-
-// More crazy rust limitation workarounds
-macro_rules! manual_expr_impls{
-    ($t: ident) => {
-        impl < T: PrimitiveType > Into < String > for $t < T > {
-            fn into(self) -> String {
-                self.expr_sentinel()
-            }
-        }
-        impl < T: PrimitiveType > Into < String > for & $t < T > {
-            fn into(self) -> String {
-                self.expr_sentinel()
-            }
-        }
-        impl < T: PrimitiveType > Display for $t < T > {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.expr_sentinel().fmt(f)
-            }
-        }
-        impl < T: PrimitiveType > Into < Primitive < T >> for $t < T > {
-            fn into(self) -> Primitive<T> {
-                Primitive::Sentinel(self.expr_sentinel())
-            }
-        }
-        impl < T: PrimitiveType > Into < Primitive < T >> for & $t < T > {
-            fn into(self) -> Primitive<T> {
-                Primitive::Sentinel(self.expr_sentinel())
-            }
-        }
-        impl Into < PrimExpr < String >> for $t < bool > {
-            fn into(self) -> PrimExpr<String> {
-                let (shared, raw) = self.expr_raw();
-                PrimExpr(shared.clone(), raw, Default::default())
-            }
-        }
-        impl Into < PrimExpr < String >> for & $t < bool > {
-            fn into(self) -> PrimExpr<String> {
-                let (shared, raw) = self.expr_raw();
-                PrimExpr(shared.clone(), raw, Default::default())
-            }
-        }
-        impl Into < PrimExpr < String >> for $t < i64 > {
-            fn into(self) -> PrimExpr<String> {
-                let (shared, raw) = self.expr_raw();
-                PrimExpr(shared.clone(), raw, Default::default())
-            }
-        }
-        impl Into < PrimExpr < String >> for & $t < i64 > {
-            fn into(self) -> PrimExpr<String> {
-                let (shared, raw) = self.expr_raw();
-                PrimExpr(shared.clone(), raw, Default::default())
-            }
-        }
-        impl Into < PrimExpr < String >> for $t < f64 > {
-            fn into(self) -> PrimExpr<String> {
-                let (shared, raw) = self.expr_raw();
-                PrimExpr(shared.clone(), raw, Default::default())
-            }
-        }
-        impl Into < PrimExpr < String >> for & $t < f64 > {
-            fn into(self) -> PrimExpr<String> {
-                let (shared, raw) = self.expr_raw();
-                PrimExpr(shared.clone(), raw, Default::default())
-            }
-        }
-    };
-}
-
-pub struct PrimExpr<T: PrimitiveType>(StackShared, String, PhantomData<T>);
-
-impl<T: PrimitiveType> Expr<T> for PrimExpr<T> {
-    fn expr_raw(&self) -> (&StackShared, String) {
-        (&self.0, self.1.clone())
-    }
-
-    fn expr_sentinel(&self) -> String {
-        self.0.add_sentinel(&self.1)
-    }
-}
-
-manual_expr_impls!(PrimExpr);
-
-// References
-pub trait Ref {
-    fn new(shared: StackShared, base: String) -> Self;
-}
-
-impl<T: PrimitiveType> Ref for PrimExpr<T> {
-    fn new(shared: StackShared, base: String) -> PrimExpr<T> {
-        PrimExpr(shared, base, Default::default())
-    }
-}
-
-pub struct ListRef<T: Ref> {
-    shared: StackShared,
-    base: String,
-    _pd: PhantomData<T>,
-}
-
-impl<T: Ref> Ref for ListRef<T> {
-    fn new(shared: StackShared, base: String) -> Self {
-        ListRef {
-            shared: shared,
-            base: base,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<T: Ref> ListRef<T> {
-    pub fn get(&self, index: usize) -> T {
-        T::new(self.shared.clone(), format!("{}[{}]", &self.base, index))
-    }
-}
-
-pub struct MapRef<T: Ref> {
-    shared: StackShared,
-    base: String,
-    _pd: PhantomData<T>,
-}
-
-impl<T: Ref> Ref for MapRef<T> {
-    fn new(shared: StackShared, base: String) -> Self {
-        MapRef {
-            shared: shared,
-            base: base,
-            _pd: Default::default(),
-        }
-    }
-}
-
-impl<T: Ref> MapRef<T> {
-    pub fn get(&self, key: impl ToString) -> T {
-        T::new(self.shared.clone(), format!("{}[\"{}\"]", &self.base, key.to_string()))
-    }
-}
-
-// Variable
-trait VariableTrait {
-    fn extract_tf_id(&self) -> String;
-    fn extract_value(&self) -> Value;
-}
-
-#[derive(Serialize)]
-struct VariableImplData {
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-    pub r#type: String,
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_not_default")]
-    pub nullable: Primitive<bool>,
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-    pub sensitive: Primitive<bool>,
-}
-
-struct Variable_<T: PrimitiveType> {
-    shared: StackShared,
-    tf_id: String,
-    data: RefCell<VariableImplData>,
-    _p: PhantomData<T>,
-}
-
-pub struct Variable<T: PrimitiveType>(Rc<Variable_<T>>);
-
-impl<T: PrimitiveType> VariableTrait for Variable_<T> {
-    fn extract_tf_id(&self) -> String {
-        self.tf_id.clone()
-    }
-
-    fn extract_value(&self) -> Value {
-        let data = self.data.borrow();
-        serde_json::to_value(&*data).unwrap()
-    }
-}
-
-impl<T: PrimitiveType> Variable<T> {
-    pub fn set_nullable(self, v: impl Into<Primitive<bool>>) -> Self {
-        self.0.data.borrow_mut().nullable = v.into();
-        self
-    }
-
-    pub fn set_sensitive(self, v: impl Into<Primitive<bool>>) -> Self {
-        self.0.data.borrow_mut().sensitive = v.into();
-        self
-    }
-}
-
-impl<T: PrimitiveType> Expr<T> for Variable<T> {
-    fn expr_raw(&self) -> (&StackShared, String) {
-        (&self.0.shared, format!("var.{}", self.0.tf_id))
-    }
-
-    fn expr_sentinel(&self) -> String {
-        let (shared, raw) = self.expr_raw();
-        shared.add_sentinel(&raw)
-    }
-}
-
-manual_expr_impls!(Variable);
-
-pub struct BuildVariable {
-    pub tf_id: String,
-}
-
-impl BuildVariable {
-    pub fn build<T: PrimitiveType + 'static>(self, stack: &mut Stack) -> Variable<T> {
-        let out = Variable(Rc::new(Variable_ {
-            shared: stack.shared.clone(),
-            tf_id: self.tf_id,
-            data: RefCell::new(VariableImplData {
-                r#type: T::extract_variable_type(),
-                nullable: false.into(),
-                sensitive: false.into(),
-            }),
-            _p: Default::default(),
-        }));
-        stack.variables.push(out.0.clone());
-        out
-    }
-}
-
-// Output
-trait Output {
-    fn extract_tf_id(&self) -> String;
-    fn extract_value(&self) -> Value;
-}
-
-#[derive(Serialize)]
-struct OutputImplData<T: PrimitiveType> {
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-    pub sensitive: Primitive<bool>,
-    #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-    pub value: Primitive<T>,
-}
-
-pub struct OutputImpl<T: PrimitiveType> {
-    tf_id: String,
-    data: RefCell<OutputImplData<T>>,
-}
-
-impl<T: PrimitiveType> OutputImpl<T> {
-    pub fn set_sensitive(&self, v: impl Into<Primitive<bool>>) -> &Self {
-        self.data.borrow_mut().sensitive = v.into();
-        self
-    }
-}
-
-impl<T: PrimitiveType> Output for OutputImpl<T> {
-    fn extract_tf_id(&self) -> String {
-        self.tf_id.clone()
-    }
-
-    fn extract_value(&self) -> Value {
-        let data = self.data.borrow();
-        serde_json::to_value(&*data).unwrap()
-    }
-}
-
-/// Create a new output.
-pub struct BuildOutput<T: PrimitiveType> {
-    pub tf_id: String,
-    pub value: Primitive<T>,
-}
-
-impl<T: PrimitiveType + 'static> BuildOutput<T> {
-    pub fn build(self, stack: &mut Stack) -> Rc<OutputImpl<T>> {
-        let out = Rc::new(OutputImpl {
-            tf_id: self.tf_id,
-            data: RefCell::new(OutputImplData {
-                sensitive: false.into(),
-                value: self.value,
-            }),
-        });
-        stack.outputs.push(out.clone());
-        out
-    }
-}
-
 // Provider extras
 #[derive(Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -803,27 +384,4 @@ pub struct ResourceLifecycle {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_changes: Option<IgnoreChanges>,
     pub replace_triggered_by: Vec<String>,
-}
-
-#[macro_export]
-macro_rules! primvec{
-    ($($e: expr), *) => {
-        vec![$(terrars:: Primitive:: from($e)), *]
-    };
-}
-
-// Functions
-pub fn tf_base64encode(e: PrimExpr<String>) -> PrimExpr<String> {
-    let (shared, raw) = e.expr_raw();
-    PrimExpr(shared.clone(), format!("base64encode({})", raw), Default::default())
-}
-
-pub fn tf_base64decode(e: PrimExpr<String>) -> PrimExpr<String> {
-    let (shared, raw) = e.expr_raw();
-    PrimExpr(shared.clone(), format!("base64decode({})", raw), Default::default())
-}
-
-pub fn tf_substr(e: PrimExpr<String>, offset: usize, length: usize) -> PrimExpr<String> {
-    let (shared, raw) = e.expr_raw();
-    PrimExpr(shared.clone(), format!("substr({}, {}, {})", raw, offset, length), Default::default())
 }

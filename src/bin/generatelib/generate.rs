@@ -27,7 +27,7 @@ pub fn generate_simple_type(t: &ScalarTypeKey) -> (TokenStream, Option<(TokenStr
         ScalarTypeKey::String => quote!(String),
         ScalarTypeKey::Bool => quote!(bool),
     };
-    (quote!(Primitive < #raw >), Some((quote!(PrimExpr), quote!(PrimExpr < #raw >))))
+    (quote!(PrimField < #raw >), Some((quote!(PrimExpr), quote!(PrimExpr < #raw >))))
 }
 
 pub fn add_path(v: &Vec<String>, e: &str) -> Vec<String> {
@@ -196,12 +196,12 @@ pub fn generate_field(
         if self_has_identity {
             let ref_fmt = format!("{{}}.{}", k);
             out.ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-                #t1:: new(self.0.shared.clone(), format!(#ref_fmt, self.extract_ref()))
+                #t1:: new(self.shared().clone(), format!(#ref_fmt, self.extract_ref()))
             }));
         }
         let ref_ref_fmt = format!("{{}}.{}", k);
         out.ref_ref_methods.push(quote!(#[doc = #ref_doc] pub fn #field_name(&self) -> #t2 {
-            #t1:: new(self.shared.clone(), format!(#ref_ref_fmt, self.base))
+            #t1:: new(self.shared().clone(), format!(#ref_ref_fmt, self.base))
         }));
     }
 }
@@ -214,14 +214,22 @@ fn generate_type(
     match at {
         (Some(ValueSchema::Simple(t)), None) => generate_simple_type(t),
         (Some(ValueSchema::AggColl(at)), None) => generate_agg_type_coll(extra_types, path, at.as_ref()),
-        (Some(ValueSchema::AggObject(at)), None) => generate_agg_type_obj(extra_types, path, at.as_ref()),
+        (Some(ValueSchema::AggObj(at)), None) => generate_agg_type_obj(extra_types, path, at.as_ref()),
         (None, Some(x)) => match x.nesting_mode {
-            super::sourceschema::NestingMode::List | super::sourceschema::NestingMode::Set => {
+            super::sourceschema::NestingMode::List => {
                 let (element_type, element_ref_type) =
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
-                    quote!(Vec < #element_type >),
+                    quote!(BlockListField < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
+                )
+            },
+            super::sourceschema::NestingMode::Set => {
+                let (element_type, element_ref_type) =
+                    generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
+                (
+                    quote!(BlockSetField < #element_type >),
+                    element_ref_type.map(|(_, r2)| (quote!(SetRef), quote!(SetRef < #r2 >))),
                 )
             },
             super::sourceschema::NestingMode::Single => unreachable!(),
@@ -258,30 +266,41 @@ fn generate_agg_type_coll(
     at: &AggCollType,
 ) -> (TokenStream, Option<(TokenStream, TokenStream)>) {
     match at.0 {
-        AggCollTypeKey::List | AggCollTypeKey::Set => {
+        AggCollTypeKey::List => {
             let (element_type, element_ref_type) = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
                 ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, &add_path(&path, "el"), a.as_ref()),
-                ValueSchema::AggObject(a) => generate_agg_type_obj(extra_types, &add_path(&path, "el"), a.as_ref()),
+                ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, &add_path(&path, "el"), a.as_ref()),
             };
             (
-                quote!(std:: vec:: Vec < #element_type >),
+                quote!(ListField < #element_type >),
                 element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
             )
         },
-        AggCollTypeKey::Map => {
+        AggCollTypeKey::Set => {
+            let (element_type, element_ref_type) = match &at.1 {
+                ValueSchema::Simple(t) => generate_simple_type(&t),
+                ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, &add_path(&path, "el"), a.as_ref()),
+                ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, &add_path(&path, "el"), a.as_ref()),
+            };
+            (
+                quote!(SetField < #element_type >),
+                element_ref_type.map(|(_, r2)| (quote!(SetRef), quote!(SetRef < #r2 >))),
+            )
+        },
+        AggCollTypeKey::Rec => {
             let (element_type, element_ref_type) = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
                 ValueSchema::AggColl(_) => {
                     panic!("supposedly not supported by terraform")
                 },
-                ValueSchema::AggObject(_) => {
+                ValueSchema::AggObj(_) => {
                     panic!("supposedly not supported by terraform")
                 },
             };
             (
-                quote!(std::collections::HashMap < String, #element_type >),
-                element_ref_type.map(|(_, r2)| (quote!(MapRef), quote!(MapRef < #r2 >))),
+                quote!(RecField < #element_type >),
+                element_ref_type.map(|(_, r2)| (quote!(RecRef), quote!(RecRef < #r2 >))),
             )
         },
     }
@@ -312,13 +331,13 @@ pub fn generate_block_fields(
                 let (element_type, element_ref_type) =
                     generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
                 (
-                    quote!(std:: vec:: Vec < #element_type >),
+                    quote!(BlockListField < #element_type >),
                     Some((quote!(ListRef), quote!(ListRef < #element_ref_type >))),
                 )
             },
             NestingMode::Set => {
                 let (element_type, _) = generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                (quote!(std:: vec:: Vec < #element_type >), None)
+                (quote!(BlockSetField < #element_type >), None)
             },
             NestingMode::Single => {
                 let (element_type, element_ref_type) =
@@ -405,6 +424,15 @@ pub fn generate_nonident_rust_type(
         impl #obj_ident {
             #(#resource_mut_methods) *
         }
+        impl ToListMappable for #obj_ident {
+            type O = BlockListField < #obj_ident >;
+            fn do_map(self, base: String) -> Self::O {
+                BlockListField::Dynamic(DynamicBlock {
+                    for_each: format!("${{{}}}", base),
+                    content: self,
+                })
+            }
+        }
         pub struct #obj_builder_ident {
             #(#builder_fields,) *
         }
@@ -419,7 +447,7 @@ pub fn generate_nonident_rust_type(
             shared: StackShared,
             base: String
         }
-        impl Ref for #obj_ref_ident {
+        impl PrimRef for #obj_ref_ident {
             fn new(shared: StackShared, base: String) -> #obj_ref_ident {
                 #obj_ref_ident {
                     shared: shared,
@@ -428,6 +456,9 @@ pub fn generate_nonident_rust_type(
             }
         }
         impl #obj_ref_ident {
+            fn shared(&self) -> &StackShared {
+                &self.shared
+            }
             #(#ref_ref_methods) *
         }
     });

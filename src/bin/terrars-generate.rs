@@ -331,6 +331,7 @@ fn main() {
                 let resource_inner_ident = format_ident!("{}_", camel_name);
                 let resource_inner_mut_ident = format_ident!("{}Data", camel_name);
                 let resource_builder_ident = format_ident!("Build{}", camel_name);
+                let resource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{
                     #[derive(Serialize)] struct #resource_inner_mut_ident {
                         #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -339,6 +340,8 @@ fn main() {
                         provider: Option<String>,
                         #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
                         lifecycle: ResourceLifecycle,
+                        #[serde(skip_serializing_if = "Option::is_none")]
+                        for_each: Option<String>,
                         #(#resource_fields,) *
                     }
                     struct #resource_inner_ident {
@@ -348,6 +351,9 @@ fn main() {
                     }
                     #[derive(Clone)] pub struct #resource_ident(Rc < #resource_inner_ident >);
                     impl #resource_ident {
+                        fn shared(&self) -> &StackShared {
+                            &self.0.shared
+                        }
                         pub fn depends_on(self, dep: &impl Resource) -> Self {
                             self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
@@ -404,6 +410,13 @@ fn main() {
                             format!("{}.{}", self.0.extract_resource_type(), self.0.extract_tf_id())
                         }
                     }
+                    impl ToListMappable for #resource_ident {
+                        type O = ListRef < #resource_ref_ident >;
+                        fn do_map(self, base: String) -> Self::O {
+                            self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
+                            ListRef::new(self.0.shared.clone(), self.extract_ref())
+                        }
+                    }
                     impl Resource_ for #resource_inner_ident {
                         fn extract_resource_type(&self) -> String {
                             #resource_name.into()
@@ -428,12 +441,34 @@ fn main() {
                                     depends_on: core::default::Default::default(),
                                     provider: None,
                                     lifecycle: core::default::Default::default(),
+                                    for_each: None,
                                     #(#copy_builder_fields,) *
                                 }),
                             }));
                             stack.add_resource(out.0.clone());
                             out
                         }
+                    }
+                    pub struct #resource_ref_ident {
+                        shared: StackShared,
+                        base: String
+                    }
+                    impl PrimRef for #resource_ref_ident {
+                        fn new(shared: StackShared, base: String) -> Self {
+                            Self {
+                                shared: shared,
+                                base: base,
+                            }
+                        }
+                    }
+                    impl #resource_ref_ident {
+                        fn extract_ref(&self) -> String {
+                            self.base.clone()
+                        }
+                        fn shared(&self) -> &StackShared {
+                            &self.shared
+                        }
+                        #(#resource_ref_methods) *
                     }
                     #(#extra_types) *
                 });
@@ -473,10 +508,13 @@ fn main() {
                 let datasource_inner_ident = format_ident!("{}_", camel_name);
                 let datasource_inner_mut_ident = format_ident!("{}Data", camel_name);
                 let datasource_builder_ident = format_ident!("Build{}", camel_name);
+                let datasource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{
                     #[derive(Serialize)] struct #datasource_inner_mut_ident {
                         #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
                         provider: Option<String>,
+                        #[serde(skip_serializing_if = "Option::is_none")]
+                        for_each: Option<String>,
                         #(#datasource_fields,) *
                     }
                     struct #datasource_inner_ident {
@@ -486,6 +524,9 @@ fn main() {
                     }
                     #[derive(Clone)] pub struct #datasource_ident(Rc < #datasource_inner_ident >);
                     impl #datasource_ident {
+                        fn shared(&self) -> &StackShared {
+                            &self.0.shared
+                        }
                         pub fn set_provider(&self, provider:& #provider_ident) ->& Self {
                             self.0.data.borrow_mut().provider = Some(provider.provider_ref());
                             self
@@ -495,6 +536,13 @@ fn main() {
                     impl Datasource for #datasource_ident {
                         fn extract_ref(&self) -> String {
                             format!("data.{}.{}", self.0.extract_datasource_type(), self.0.extract_tf_id())
+                        }
+                    }
+                    impl ToListMappable for #datasource_ident {
+                        type O = ListRef < #datasource_ref_ident >;
+                        fn do_map(self, base: String) -> Self::O {
+                            self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
+                            ListRef::new(self.0.shared.clone(), self.extract_ref())
                         }
                     }
                     impl Datasource_ for #datasource_inner_ident {
@@ -519,12 +567,34 @@ fn main() {
                                 tf_id: self.tf_id,
                                 data: RefCell:: new(#datasource_inner_mut_ident {
                                     provider: None,
+                                    for_each: None,
                                     #(#copy_builder_fields,) *
                                 }),
                             }));
                             stack.add_datasource(out.0.clone());
                             out
                         }
+                    }
+                    pub struct #datasource_ref_ident {
+                        shared: StackShared,
+                        base: String
+                    }
+                    impl PrimRef for #datasource_ref_ident {
+                        fn new(shared: StackShared, base: String) -> Self {
+                            Self {
+                                shared: shared,
+                                base: base,
+                            }
+                        }
+                    }
+                    impl #datasource_ref_ident {
+                        fn shared(&self) -> &StackShared {
+                            &self.shared
+                        }
+                        fn extract_ref(&self) -> String {
+                            self.base.clone()
+                        }
+                        #(#datasource_ref_methods) *
                     }
                     #(#extra_types) *
                 });
