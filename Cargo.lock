@@ -302,6 +302,8 @@ dependencies = [
 [[package]]
 name = "genemichaels"
 version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd0d715b436f3b692ceb7f4e75767f5fde51e7d33a1da76bf0a63507a103335c"
 dependencies = [
  "anyhow",
  "cargo-manifest",
@@ -504,7 +506,8 @@ dependencies = [
 [[package]]
 name = "markdown"
 version = "1.0.0-alpha.5"
-source = "git+https://github.com/wooorm/markdown-rs?rev=af202d3f0ea24e0a957b02a6f9fb23c6c3b4afe7#af202d3f0ea24e0a957b02a6f9fb23c6c3b4afe7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e15a8b67b7a9cb4bfbda3131ab091529c338174c78da8d46adbce1e510daf191"
 dependencies = [
  "log",
  "unicode-id",
@@ -948,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "terrars"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "anyhow",
  "clap",
