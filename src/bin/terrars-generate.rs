@@ -208,10 +208,8 @@ fn main() {
             {
                 let mut out = rustfile_template();
                 let camel_name = to_camel(provider_name_parts);
-                let provider_type_name = format_ident!("ProviderType{}", camel_name);
                 let source = &config.provider;
                 let version = &config.version;
-                let provider_type_fn = format_ident!("provider_{}", provider_snake_name);
                 let provider_inner_mut_ident = format_ident!("Provider{}Data", camel_name);
                 let mut raw_fields = TopLevelFields::default();
                 generate_fields_from_value_map(
@@ -229,23 +227,6 @@ fn main() {
                 let provider_inner_ident = format_ident!("Provider{}_", camel_name);
                 let provider_builder_ident = format_ident!("BuildProvider{}", camel_name);
                 out.push(quote!{
-                    pub struct #provider_type_name;
-                    impl ProviderType for #provider_type_name {
-                        fn extract_tf_id(&self) -> String {
-                            #shortname.into()
-                        }
-                        fn extract_required_provider(&self) -> serde_json::Value {
-                            serde_json::json!({
-                                "source": #source,
-                                "version": #version,
-                            })
-                        }
-                    }
-                    pub fn #provider_type_fn(stack: &mut Stack) -> Rc < #provider_type_name > {
-                        let out = Rc:: new(#provider_type_name);
-                        stack.add_provider_type(out.clone());
-                        out
-                    }
                     #[derive(Serialize)] struct #provider_inner_mut_ident {
                         #[serde(skip_serializing_if = "Option::is_none")]
                         alias: Option<String>,
@@ -265,8 +246,8 @@ fn main() {
                                 #shortname.into()
                             }
                         }
-                        pub fn set_alias(self, alias: String) -> Self {
-                            self.0.data.borrow_mut().alias = Some(alias);
+                        pub fn set_alias(self, alias: impl ToString) -> Self {
+                            self.0.data.borrow_mut().alias = Some(alias.to_string());
                             self
                         }
                         #(#provider_mut_methods) *
@@ -274,6 +255,12 @@ fn main() {
                     impl Provider for #provider_inner_ident {
                         fn extract_type_tf_id(&self) -> String {
                             #shortname.into()
+                        }
+                        fn extract_provider_type(&self) -> serde_json::Value {
+                            serde_json::json!({
+                                "source": #source,
+                                "version": #version,
+                            })
                         }
                         fn extract_provider(&self) -> serde_json::Value {
                             serde_json::to_value(&self.data).unwrap()
@@ -283,7 +270,7 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #provider_builder_ident {
-                        pub fn build(self, _provider_type:& #provider_type_name, stack: &mut Stack) -> #provider_ident {
+                        pub fn build(self, stack: &mut Stack) -> #provider_ident {
                             let out = #provider_ident(Rc:: new(#provider_inner_ident {
                                 data: RefCell:: new(#provider_inner_mut_ident {
                                     alias: None,

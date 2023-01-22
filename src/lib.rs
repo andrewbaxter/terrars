@@ -74,7 +74,6 @@ pub struct BuildStack {}
 impl BuildStack {
     pub fn build(self) -> Stack {
         return Stack {
-            provider_types: Default::default(),
             providers: Default::default(),
             variables: Default::default(),
             datasources: Default::default(),
@@ -141,7 +140,6 @@ impl StackShared {
 }
 
 pub struct Stack {
-    provider_types: Vec<Rc<dyn ProviderType>>,
     providers: Vec<Rc<dyn Provider>>,
     variables: Vec<Rc<dyn VariableTrait>>,
     datasources: Vec<Rc<dyn Datasource_>>,
@@ -185,10 +183,13 @@ impl Stack {
             *f.borrow_mut() = Some(self.shared.0.borrow().replace_exprs.clone());
         });
         let mut required_providers = BTreeMap::new();
-        for p in &self.provider_types {
-            if required_providers.insert(p.extract_tf_id(), p.extract_required_provider()).is_some() {
-                Err(StackError::Duplicate(ComponentType::ProviderType, p.extract_tf_id()))?;
-            }
+        for p in &self.providers {
+            match required_providers.entry(p.extract_type_tf_id()) {
+                std::collections::btree_map::Entry::Vacant(v) => {
+                    v.insert(p.extract_provider_type());
+                },
+                std::collections::btree_map::Entry::Occupied(_) => { },
+            };
         }
         let mut providers = BTreeMap::new();
         for p in &self.providers {
@@ -253,10 +254,6 @@ impl Stack {
         REPLACE_EXPRS.with(|f| *f.borrow_mut() = None);
         let res = serde_json::to_vec_pretty(&out).unwrap();
         Ok(res)
-    }
-
-    pub fn add_provider_type(&mut self, v: Rc<dyn ProviderType>) {
-        self.provider_types.push(v);
     }
 
     pub fn add_provider(&mut self, v: Rc<dyn Provider>) {
@@ -336,13 +333,9 @@ impl Stack {
 }
 
 // Primitives Generated traits
-pub trait ProviderType {
-    fn extract_tf_id(&self) -> String;
-    fn extract_required_provider(&self) -> Value;
-}
-
 pub trait Provider {
     fn extract_type_tf_id(&self) -> String;
+    fn extract_provider_type(&self) -> Value;
     fn extract_provider(&self) -> Value;
 }
 
