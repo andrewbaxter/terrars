@@ -49,9 +49,9 @@ impl<T: Ref> ListRef<T> {
         out.do_map(self.base.clone())
     }
 
-    pub fn map_obj<O: ListToRecMappable>(&self, inner: impl FnOnce(MapKV<T>) -> (PrimExpr<String>, O)) -> O::O {
+    pub fn map_rec<O: ListToRecMappable>(&self, inner: impl FnOnce(MapKV<T>) -> (PrimExpr<String>, O)) -> O::O {
         let (k, out) = inner(MapKV::new(self.shared.clone()));
-        out.do_map_obj(self.base.clone(), k)
+        out.do_map_rec(self.base.clone(), k)
     }
 }
 

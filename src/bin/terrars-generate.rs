@@ -39,7 +39,6 @@ use std::{
         PathBuf,
     },
     process::Command,
-    str::FromStr,
 };
 use crate::generatelib::{
     generate::{
@@ -86,8 +85,9 @@ fn main() {
         struct Config {
             provider: String,
             version: String,
-            include: Vec<String>,
-            dest: Option<PathBuf>,
+            include: Option<Vec<String>>,
+            exclude: Option<Vec<String>>,
+            dest: PathBuf,
         }
 
         #[derive(Parser)]
@@ -109,7 +109,8 @@ fn main() {
             let (vendor, shortname) =
                 config.provider.split_once("/").unwrap_or_else(|| ("hashicorp".into(), &config.provider));
             let provider_prefix = format!("{}_", shortname);
-            let mut include: HashSet<&String> = config.include.iter().collect();
+            let mut include: HashSet<&String> = config.include.iter().flatten().collect();
+            let mut exclude: HashSet<&String> = config.exclude.iter().flatten().collect();
             let whitelist = !include.is_empty();
 
             // Get provider schema
@@ -193,12 +194,7 @@ fn main() {
                 })?
             };
             let provider_name_parts = &shortname.split("-").map(ToString::to_string).collect::<Vec<String>>();
-            let provider_snake_name = to_snake(provider_name_parts);
-            let provider_dir = if let Some(dest) = config.dest {
-                dest
-            } else {
-                PathBuf::from_str(&provider_snake_name).unwrap()
-            };
+            let provider_dir = config.dest;
             if provider_dir.exists() {
                 remove_dir_all(&provider_dir)?;
             }
@@ -303,7 +299,10 @@ fn main() {
                 if whitelist && !include.remove(&nice_resource_name) {
                     continue;
                 }
-                println!("Generating {}", resource_name);
+                if exclude.remove(&nice_resource_name) {
+                    continue;
+                }
+                println!("Generating {}", nice_resource_name);
                 let camel_name = to_camel(&use_name_parts);
                 let mut raw_fields = TopLevelFields::default();
                 generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &resource.block.attributes, true);

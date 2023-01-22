@@ -14,13 +14,13 @@ use crate::{
 pub trait ToObjMappable {
     type O;
 
-    fn do_map_obj(self, base: String, k: PrimExpr<String>) -> Self::O;
+    fn do_map_rec(self, base: String, k: PrimExpr<String>) -> Self::O;
 }
 
 pub trait ListToRecMappable {
     type O;
 
-    fn do_map_obj(self, base: String, k: PrimExpr<String>) -> Self::O;
+    fn do_map_rec(self, base: String, k: PrimExpr<String>) -> Self::O;
 }
 
 pub struct RecRef<T: Ref> {
@@ -49,9 +49,9 @@ impl<T: Ref> RecRef<T> {
         out.do_map(self.base.clone())
     }
 
-    pub fn map_obj<O: ToObjMappable>(&self, inner: impl FnOnce(MapKV<T>) -> (PrimExpr<String>, O)) -> O::O {
+    pub fn map_rec<O: ToObjMappable>(&self, inner: impl FnOnce(MapKV<T>) -> (PrimExpr<String>, O)) -> O::O {
         let (k, out) = inner(MapKV::new(self.shared.clone()));
-        out.do_map_obj(self.base.clone(), k)
+        out.do_map_rec(self.base.clone(), k)
     }
 }
 

@@ -157,26 +157,6 @@ impl Stack {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 
-    pub fn string(&self, val: impl ToString) -> PrimExpr<String> {
-        PrimExpr(self.shared.clone(), format!("\"{}\"", val.to_string().replace("\"", "\\\"")), Default::default())
-    }
-
-    pub fn bool(&self, val: bool) -> PrimExpr<bool> {
-        PrimExpr(self.shared.clone(), if val {
-            "true"
-        } else {
-            "false"
-        }.into(), Default::default())
-    }
-
-    pub fn i64(&self, val: i64) -> PrimExpr<i64> {
-        PrimExpr(self.shared.clone(), val.to_string(), Default::default())
-    }
-
-    pub fn f64(&self, val: f64) -> PrimExpr<f64> {
-        PrimExpr(self.shared.clone(), val.to_string(), Default::default())
-    }
-
     /// Convert the stack to json bytes.
     pub fn serialize(&self, state_path: &Path) -> Result<Vec<u8>, StackError> {
         REPLACE_EXPRS.with(move |f| {

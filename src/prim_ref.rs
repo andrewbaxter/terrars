@@ -59,7 +59,7 @@ impl<T: PrimType> ToListMappable for PrimExpr<T> {
 impl<T: PrimType> ListToRecMappable for PrimExpr<T> {
     type O = MapListRefToRec<PrimField<T>>;
 
-    fn do_map_obj(self, base: String, k: PrimExpr<String>) -> Self::O {
+    fn do_map_rec(self, base: String, k: PrimExpr<String>) -> Self::O {
         MapListRefToRec::new(self.0, base, k.1, self.1)
     }
 }
@@ -75,7 +75,7 @@ impl<T: PrimType> RecToListMappable for PrimExpr<T> {
 impl<T: PrimType> ToObjMappable for PrimExpr<T> {
     type O = MapRecRef<PrimField<T>>;
 
-    fn do_map_obj(self, base: String, k: PrimExpr<String>) -> Self::O {
+    fn do_map_rec(self, base: String, k: PrimExpr<String>) -> Self::O {
         MapRecRef::new(self.0, base, k.1, self.1)
     }
 }
