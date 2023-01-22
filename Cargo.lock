@@ -78,6 +78,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo_toml"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f1204fe51a1e56042b8ec31d6407547ecd18f596b66f470dadb9abd9be9c843"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -951,9 +961,10 @@ dependencies = [
 
 [[package]]
 name = "terrars"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "anyhow",
+ "cargo_toml",
  "clap",
  "erased-serde",
  "genemichaels",
@@ -967,6 +978,7 @@ dependencies = [
  "syn",
  "tempfile",
  "thiserror",
+ "toml",
 ]
 
 [[package]]

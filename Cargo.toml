@@ -1,6 +1,6 @@
 [package]
 name = "terrars"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2021"
 description = "Terraform in Rust"
 license = "ISC"
@@ -9,6 +9,7 @@ repository = "https://github.com/andrewbaxter/terrars"
 
 [dependencies]
 anyhow = "1.0.66"
+cargo_toml = "0.14.0"
 clap = { version = "4.0.27", features = ["derive"] }
 erased-serde = "0.3.23"
 genemichaels = "0.1.17"
@@ -22,3 +23,4 @@ sloggers = "2.1.1"
 syn = "1.0.103"
 tempfile = "3.3.0"
 thiserror = "1.0.37"
+toml = "0.5.11"

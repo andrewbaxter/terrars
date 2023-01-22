@@ -88,7 +88,7 @@ fn main() {
             include: Option<Vec<String>>,
             exclude: Option<Vec<String>>,
             dest: PathBuf,
-            feature_gate: bool,
+            feature_gate: Option<PathBuf>,
         }
 
         #[derive(Parser)]
@@ -465,7 +465,7 @@ fn main() {
                 });
                 write_file(&provider_dir.join(format!("{}.rs", nice_resource_name)), out)?;
                 let path_ident = format_ident!("{}", nice_resource_name);
-                let feature_gate = if config.feature_gate {
+                let feature_gate = if config.feature_gate.is_some() {
                     features.push(nice_resource_name.clone());
                     quote!(#[cfg(feature = #nice_resource_name)])
                 } else {
@@ -601,7 +601,7 @@ fn main() {
                 });
                 write_file(&provider_dir.join(format!("{}.rs", nice_datasource_name)), out)?;
                 let path_ident = format_ident!("{}", nice_datasource_name);
-                let feature_gate = if config.feature_gate {
+                let feature_gate = if config.feature_gate.is_some() {
                     features.push(nice_datasource_name.clone());
                     quote!(#[cfg(feature = #nice_datasource_name)])
                 } else {
@@ -617,11 +617,26 @@ fn main() {
                 return Err(anyhow!("The following included resources/datasources were not found: {:?}", include));
             }
             if features.len() > 0 {
-                println!("features = [");
+                let cargo_path = config.feature_gate.unwrap();
+                let mut manifest =
+                    cargo_toml::Manifest::from_slice(
+                        &fs::read(
+                            &cargo_path,
+                        ).with_context(
+                            || format!(
+                                "Error opening Cargo.toml at {} to update features",
+                                cargo_path.to_string_lossy()
+                            ),
+                        )?,
+                    ).with_context(|| format!("Error parsing Cargo.toml at {}", cargo_path.to_string_lossy()))?;
+                manifest.features.clear();
                 for f in features {
-                    println!("    \"{}\",", f);
+                    manifest.features.insert(f, vec![]);
                 }
-                println!("]");
+                fs::write(
+                    &cargo_path,
+                    &toml::to_vec(&manifest).context("Error serializing modified Cargo.toml")?,
+                ).with_context(|| format!("Error writing to Cargo.toml at {}", cargo_path.to_string_lossy()))?;
             }
         }
         Ok(())
