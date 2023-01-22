@@ -88,6 +88,7 @@ fn main() {
             include: Option<Vec<String>>,
             exclude: Option<Vec<String>>,
             dest: PathBuf,
+            feature_gate: bool,
         }
 
         #[derive(Parser)]
@@ -112,6 +113,9 @@ fn main() {
             let mut include: HashSet<&String> = config.include.iter().flatten().collect();
             let mut exclude: HashSet<&String> = config.exclude.iter().flatten().collect();
             let whitelist = !include.is_empty();
+
+            // Feature output
+            let mut features = vec![];
 
             // Get provider schema
             let dir = tempfile::tempdir()?;
@@ -461,7 +465,16 @@ fn main() {
                 });
                 write_file(&provider_dir.join(format!("{}.rs", nice_resource_name)), out)?;
                 let path_ident = format_ident!("{}", nice_resource_name);
-                mod_out.push(quote!(pub mod #path_ident; pub use #path_ident::*;));
+                let feature_gate = if config.feature_gate {
+                    features.push(nice_resource_name.clone());
+                    quote!(#[cfg(feature = #nice_resource_name)])
+                } else {
+                    quote!()
+                };
+                mod_out.push(quote!{
+                    #feature_gate pub mod #path_ident;
+                    #feature_gate pub use #path_ident::*;
+                });
             }
 
             // Data sources
@@ -588,11 +601,27 @@ fn main() {
                 });
                 write_file(&provider_dir.join(format!("{}.rs", nice_datasource_name)), out)?;
                 let path_ident = format_ident!("{}", nice_datasource_name);
-                mod_out.push(quote!(pub mod #path_ident; pub use #path_ident::*;));
+                let feature_gate = if config.feature_gate {
+                    features.push(nice_datasource_name.clone());
+                    quote!(#[cfg(feature = #nice_datasource_name)])
+                } else {
+                    quote!()
+                };
+                mod_out.push(quote!{
+                    #feature_gate pub mod #path_ident;
+                    #feature_gate pub use #path_ident::*;
+                });
             }
             write_file(&provider_dir.join("mod.rs"), mod_out)?;
             if whitelist && !include.is_empty() {
                 return Err(anyhow!("The following included resources/datasources were not found: {:?}", include));
+            }
+            if features.len() > 0 {
+                println!("features = [");
+                for f in features {
+                    println!("    \"{}\",", f);
+                }
+                println!("]");
             }
         }
         Ok(())
