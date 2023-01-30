@@ -26,6 +26,7 @@ Why _not_ use this instead of the CDK/raw Terraform?
 - [andrewbaxter/localrun](https://github.com/andrewbaxter/terrars-andrewbaxter-localrun) - External build scripts
 - [andrewbaxter/stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe)
 - [backblaze/b2](https://github.com/andrewbaxter/terrars-backblaze-b2)
+- [digitalocean/digitalocean](https://github.com/andrewbaxter/terrars-digitalocean-digitalocean)
 - [fly-apps/fly](https://github.com/andrewbaxter/terrars-fly-apps-fly)
 - [hashicorp/aws](https://github.com/andrewbaxter/terrars-hashicorp-aws)
 - [hashicorp/random](https://github.com/andrewbaxter/terrars-hashicorp-random)
