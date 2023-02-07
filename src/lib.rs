@@ -149,11 +149,18 @@ pub struct Stack {
 }
 
 impl Stack {
+    /// Use to get an expression from a string literal (ex: `lit_expr("hi")`) for use
+    /// in other expressions, like Terraform function calls. You cannot convert from an
+    /// expression to a string then back to an expression again.
     pub fn str_expr(&self, expr: impl ToString) -> PrimExpr<String> {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 
-    pub fn expr<T: PrimType>(&self, expr: impl ToString) -> PrimExpr<T> {
+    /// Use to get an expression from a literal (ex: `lit_expr(44)` or
+    /// `lit_expr(true)`) for use in other expressions, like Terraform function calls.
+    /// You cannot convert from an expression to a string then back to an expression
+    /// again.
+    pub fn lit_expr<T: PrimType>(&self, expr: impl ToString) -> PrimExpr<T> {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 
@@ -248,9 +255,9 @@ impl Stack {
         self.resources.push(v);
     }
 
-    /// Serialize the stack to a file and run a Terraform command on it. If variables are
-    /// provided, they must be a single-level struct where all values are primitives (i64,
-    /// f64, String, bool).
+    /// Serialize the stack to a file and run a Terraform command on it. If variables
+    /// are provided, they must be a single-level struct where all values are
+    /// primitives (i64, f64, String, bool).
     pub fn run<V: Serialize>(&self, path: &Path, variables: Option<&V>, mode: &str) -> Result<(), RunError> {
         create_dir_all(path).map_err(|e| RunError::FsError(path.to_path_buf(), e))?;
         let state_name = "state.tfstate";
@@ -283,9 +290,9 @@ impl Stack {
         Ok(())
     }
 
-    /// Gets the current outputs from an applied stack. `path` is the directory in which the
-    /// .tf.json file was written. The output struct must be a single level and only have
-    /// primitive values (i64, f64, String, bool).
+    /// Gets the current outputs from an applied stack. `path` is the directory in
+    /// which the .tf.json file was written. The output struct must be a single level
+    /// and only have primitive values (i64, f64, String, bool).
     pub fn get_output<O: DeserializeOwned>(&self, path: &Path) -> Result<O, RunError> {
         let mut command = Command::new("terraform");
         let res = command.current_dir(&path).stderr(Stdio::inherit()).args(&["output", "-json"]).output()?;

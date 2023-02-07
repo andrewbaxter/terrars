@@ -76,11 +76,11 @@ pub trait PrimType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { 
 
 impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimType for T { }
 
-/// In Terraform, all fields, regardless of whether a it's an int or bool or whatever,
-/// can also take references like `${}`. `Primitive` represents this sort of value.
-/// Base types `i64` `f64` `String` and `bool` are supported, and you should be able
-/// to convert to `Primitive` with `into()`. Resource methods will return typed
-/// references that can also be used here.
+/// In Terraform, all fields, regardless of whether a it's an int or bool or
+/// whatever, can also take references like `${}`. `Primitive` represents this sort
+/// of value. Base types `i64` `f64` `String` and `bool` are supported, and you
+/// should be able to convert to `Primitive` with `into()`. Resource methods will
+/// return typed references that can also be used here.
 #[derive(Clone)]
 pub enum PrimField<T: PrimType> {
     Literal(T),
@@ -152,7 +152,21 @@ impl<T: PrimType + Display> Display for PrimField<T> {
 
 #[macro_export]
 macro_rules! primvec{
-    ($($e: expr), *) => {
+    [$($e: expr), *] => {
         vec![$(terrars:: PrimField:: from($e)), *]
+    };
+}
+
+#[macro_export]
+macro_rules! primmap{
+    {
+        $($k: tt = $e: expr),
+        *
+    }
+    => {
+        {
+            let mut out = std::collections::HashMap::new();
+            $(out.insert($k.to_string(), $e.into());) * out
+        }
     };
 }

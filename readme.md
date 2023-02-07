@@ -118,6 +118,12 @@ When defining resources and calling methods, `String` and `&str` will be treated
 
 If Terraform gives you an error about something with the text `_TERRARS_SENTINEL*` it means you probably missed a `.raw()` call on that value.
 
+As a rule of thumb
+
+1. `expression` -> `string`/`field` is OK. The expression gets turned into a sentinel value and interpolated during writing the template
+2. `string`/`field` _with no sentinel values_ (literals, etc) -> `expression` is OK.
+3. `string`/`field` _containing sentinel values_ -> `expression` is BAD. The sentinel replacement will happen twice and you'll have broken data. This can only happen if you convert an expression into a string and then back.
+
 ## For-each
 
 Lists, sets, and record references have a `.map` method which takes care of all the different "for" methods in Terraform. Specifically
@@ -127,6 +133,13 @@ Lists, sets, and record references have a `.map` method which takes care of all 
 - Call `.map` and return an attribute reference: produces an attribute for expression
 
 `.map` always produces a list reference, but this can be assgned to set fields as well. `.map_rec` is similar to `.map` but results in a record.
+
+## Vecs and maps of primitives
+
+There's two helper macros for generating vecs and maps of primitive values:
+
+- `primvec![v, ...]` - creates a vec of primitive values, converting each value into a primitive if it is not. Use like `primvec!["stringone", "stringtwo"]` (easier than `vec!["stringone".into(), "stringtwo".into()]`).
+- `primmap!{"k" = v, ...}` - creates a map of strings to primitive values, converting each value into a primitive if it is not. Same as above, performs automatic conversion.
 
 # How it works
 
