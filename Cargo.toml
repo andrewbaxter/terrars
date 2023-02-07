@@ -1,6 +1,6 @@
 [package]
 name = "terrars"
-version = "0.0.10"
+version = "0.1.0"
 edition = "2021"
 description = "Terraform in Rust"
 license = "ISC"
