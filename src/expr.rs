@@ -6,7 +6,11 @@ use crate::{
 // Expressions
 pub trait Expr<T: PrimType> {
     fn expr_raw(&self) -> (&StackShared, String);
-    fn expr_sentinel(&self) -> String;
+
+    fn expr_sentinel(&self) -> String {
+        let r = self.expr_raw();
+        r.0.add_sentinel(&r.1)
+    }
 }
 
 // More crazy rust limitation workarounds

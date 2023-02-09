@@ -164,6 +164,15 @@ impl Stack {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 
+    /// Start a new function call expression
+    pub fn func(&self, name: &str) -> Func {
+        Func {
+            shared: self.shared.clone(),
+            data: format!("{}(", name),
+            first: true,
+        }
+    }
+
     /// Convert the stack to json bytes.
     pub fn serialize(&self, state_path: &Path) -> Result<Vec<u8>, StackError> {
         REPLACE_EXPRS.with(move |f| {
@@ -344,6 +353,10 @@ pub trait Resource_ {
     fn extract_resource_type(&self) -> String;
     fn extract_tf_id(&self) -> String;
     fn extract_value(&self) -> Value;
+}
+
+pub trait Dependable {
+    fn extract_ref(&self) -> String;
 }
 
 // Provider extras

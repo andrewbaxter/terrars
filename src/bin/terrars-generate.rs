@@ -345,7 +345,7 @@ fn main() {
                         fn shared(&self) -> &StackShared {
                             &self.0.shared
                         }
-                        pub fn depends_on(self, dep: &impl Resource) -> Self {
+                        pub fn depends_on(self, dep: &impl Dependable) -> Self {
                             self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
                         }
@@ -399,6 +399,11 @@ fn main() {
                     impl Resource for #resource_ident {
                         fn extract_ref(&self) -> String {
                             format!("{}.{}", self.0.extract_resource_type(), self.0.extract_tf_id())
+                        }
+                    }
+                    impl Dependable for #resource_ident {
+                        fn extract_ref(&self) -> String {
+                            Resource::extract_ref(self)
                         }
                     }
                     impl ToListMappable for #resource_ident {
@@ -512,6 +517,8 @@ fn main() {
                 let datasource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{
                     #[derive(Serialize)] struct #datasource_inner_mut_ident {
+                        #[serde(skip_serializing_if = "Vec::is_empty")]
+                        depends_on: Vec<String>,
                         #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
                         provider: Option<String>,
                         #[serde(skip_serializing_if = "Option::is_none")]
@@ -528,6 +535,10 @@ fn main() {
                         fn shared(&self) -> &StackShared {
                             &self.0.shared
                         }
+                        pub fn depends_on(self, dep: &impl Dependable) -> Self {
+                            self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
+                            self
+                        }
                         pub fn set_provider(&self, provider:& #provider_ident) ->& Self {
                             self.0.data.borrow_mut().provider = Some(provider.provider_ref());
                             self
@@ -537,6 +548,11 @@ fn main() {
                     impl Datasource for #datasource_ident {
                         fn extract_ref(&self) -> String {
                             format!("data.{}.{}", self.0.extract_datasource_type(), self.0.extract_tf_id())
+                        }
+                    }
+                    impl Dependable for #datasource_ident {
+                        fn extract_ref(&self) -> String {
+                            Datasource::extract_ref(self)
                         }
                     }
                     impl ToListMappable for #datasource_ident {
@@ -567,6 +583,7 @@ fn main() {
                                 shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
                                 data: RefCell:: new(#datasource_inner_mut_ident {
+                                    depends_on: core::default::Default::default(),
                                     provider: None,
                                     for_each: None,
                                     #(#copy_builder_fields,) *
