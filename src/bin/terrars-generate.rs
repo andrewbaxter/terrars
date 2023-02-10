@@ -410,7 +410,7 @@ fn main() {
                         type O = ListRef < #resource_ref_ident >;
                         fn do_map(self, base: String) -> Self::O {
                             self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
-                            ListRef::new(self.0.shared.clone(), Resource::extract_ref(self))
+                            ListRef::new(self.0.shared.clone(), Resource::extract_ref(&self))
                         }
                     }
                     impl Resource_ for #resource_inner_ident {
@@ -559,7 +559,7 @@ fn main() {
                         type O = ListRef < #datasource_ref_ident >;
                         fn do_map(self, base: String) -> Self::O {
                             self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
-                            ListRef::new(self.0.shared.clone(), Datasource::extract_ref(self))
+                            ListRef::new(self.0.shared.clone(), Datasource::extract_ref(&self))
                         }
                     }
                     impl Datasource_ for #datasource_inner_ident {
