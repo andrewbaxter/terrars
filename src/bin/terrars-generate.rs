@@ -345,7 +345,7 @@ fn main() {
                         fn shared(&self) -> &StackShared {
                             &self.0.shared
                         }
-                        pub fn depends_on(self, dep: &impl Dependable) -> Self {
+                        pub fn depends_on(self, dep: &impl Referable) -> Self {
                             self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
                         }
@@ -396,21 +396,18 @@ fn main() {
                         }
                         #(#resource_mut_methods) * #(#resource_ref_methods) *
                     }
-                    impl Resource for #resource_ident {
+                    impl Referable for #resource_ident {
                         fn extract_ref(&self) -> String {
                             format!("{}.{}", self.0.extract_resource_type(), self.0.extract_tf_id())
                         }
                     }
-                    impl Dependable for #resource_ident {
-                        fn extract_ref(&self) -> String {
-                            Resource::extract_ref(self)
-                        }
+                    impl Resource for #resource_ident {
                     }
                     impl ToListMappable for #resource_ident {
                         type O = ListRef < #resource_ref_ident >;
                         fn do_map(self, base: String) -> Self::O {
                             self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
-                            ListRef::new(self.0.shared.clone(), Resource::extract_ref(&self))
+                            ListRef::new(self.0.shared.clone(), self.extract_ref())
                         }
                     }
                     impl Resource_ for #resource_inner_ident {
@@ -535,7 +532,7 @@ fn main() {
                         fn shared(&self) -> &StackShared {
                             &self.0.shared
                         }
-                        pub fn depends_on(self, dep: &impl Dependable) -> Self {
+                        pub fn depends_on(self, dep: &impl Referable) -> Self {
                             self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
                         }
@@ -545,21 +542,18 @@ fn main() {
                         }
                         #(#datasource_mut_methods) * #(#datasource_ref_methods) *
                     }
-                    impl Datasource for #datasource_ident {
+                    impl Referable for #datasource_ident {
                         fn extract_ref(&self) -> String {
                             format!("data.{}.{}", self.0.extract_datasource_type(), self.0.extract_tf_id())
                         }
                     }
-                    impl Dependable for #datasource_ident {
-                        fn extract_ref(&self) -> String {
-                            Datasource::extract_ref(self)
-                        }
+                    impl Datasource for #datasource_ident {
                     }
                     impl ToListMappable for #datasource_ident {
                         type O = ListRef < #datasource_ref_ident >;
                         fn do_map(self, base: String) -> Self::O {
                             self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
-                            ListRef::new(self.0.shared.clone(), Datasource::extract_ref(&self))
+                            ListRef::new(self.0.shared.clone(), self.extract_ref())
                         }
                     }
                     impl Datasource_ for #datasource_inner_ident {

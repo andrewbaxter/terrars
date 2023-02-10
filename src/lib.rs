@@ -328,16 +328,18 @@ impl Stack {
     }
 }
 
-// Primitives Generated traits
+// Generated traits
+pub trait Referable {
+    fn extract_ref(&self) -> String;
+}
+
 pub trait Provider {
     fn extract_type_tf_id(&self) -> String;
     fn extract_provider_type(&self) -> Value;
     fn extract_provider(&self) -> Value;
 }
 
-pub trait Datasource {
-    fn extract_ref(&self) -> String;
-}
+pub trait Datasource: Referable { }
 
 pub trait Datasource_ {
     fn extract_datasource_type(&self) -> String;
@@ -345,18 +347,12 @@ pub trait Datasource_ {
     fn extract_value(&self) -> Value;
 }
 
-pub trait Resource {
-    fn extract_ref(&self) -> String;
-}
+pub trait Resource: Referable { }
 
 pub trait Resource_ {
     fn extract_resource_type(&self) -> String;
     fn extract_tf_id(&self) -> String;
     fn extract_value(&self) -> Value;
-}
-
-pub trait Dependable {
-    fn extract_ref(&self) -> String;
 }
 
 // Provider extras
