@@ -24,3 +24,6 @@ syn = "1.0.103"
 tempfile = "3.3.0"
 thiserror = "1.0.37"
 toml = "0.5.11"
+
+[workspace]
+members = ["helloworld"]

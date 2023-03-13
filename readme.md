@@ -1,8 +1,10 @@
 Terrars is a tools for building Terraform stacks in Rust. This is an alternative to the CDK.
 
+**See a full example** in [helloworld](helloworld)!
+
 **Current status**: Usable, but may have some rough edges and missing features. I may continue to tweak things to improve ergonomics.
 
-Why use this/CDK instead of raw Terraform?
+Why use this or the CDK instead of raw Terraform?
 
 - All stacks eventually get complicated to the point you need a full programming language to generate them. CDK and this aren't particularly more verbose than raw Terraform, so I'd always use them from the start.
 - Reuse constants and datastructures from your code (json structures, environment variables, endpoints and reverse routing functions) when defining your infrastructure
@@ -11,14 +13,14 @@ Why use this/CDK instead of raw Terraform?
 Why use this instead of the CDK?
 
 - It's Rust, which you're already using
-- More static type safety - the CDK ignores types in a number of situations, munges required and optional parameters together
-- Fewer layers - `cdk` requires `terraform`, a `cdk` CLI, Javascript tools, Javascript package directories, and depending on what language you use that language itself as well. CDK generation requires a `json spec -> typescript -> generated javascript -> final language` translation process. `terrars` only requires `terraform` both during generation and runtime and goes directly from the JSON spec to Rust.
-- No complicated type hierarchy with scopes, inheritance, etc.
+- More static type safety - the CDK ignores types in a number of situations and munges required and optional parameters together
 - Pre-generated bindings
+- No complicated type hierarchy with scopes, inheritance, etc.
+- Fewer layers - `cdk` requires `terraform`, a `cdk` CLI, Javascript tools, Javascript package directories, and depending on what language you use that language itself as well. CDK generation requires a `json spec -> typescript -> generated javascript -> final language` translation process. `terrars` only requires `terraform` both during generation and runtime and goes directly from the JSON spec to Rust.
 
-Why _not_ use this instead of the CDK/raw Terraform?
+Why _not_ use this instead of the CDK?
 
-- You need to create your own workflow/commands for deploying. This can be a simple argument-less Rust binary that generates the stack when run, or a more complicated workflow as you see fit. But there's no premade CLI.
+- You need to create your own workflow. You can create a simple build.rs file, but if you want a more complex wrapper you need to write it yourself.
 
 # Pre-generated bindings
 
@@ -34,9 +36,11 @@ Why _not_ use this instead of the CDK/raw Terraform?
 
 # Usage
 
-1. Install pre-generated bindings such as [terrars-andrewbaxter-stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe) or else generate your own (see [Generation] below).
+**Note**: There's a full example in [helloworld](helloworld)!
 
-2. Develop your code
+1. Install pre-generated bindings such as [terrars-andrewbaxter-stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe) or else generate your own (see [Generation] below) and enable features for the resources you want to use.
+
+2. Develop your code (ex: `build.rs`)
 
    Create a `Stack` and set up providers:
 
@@ -74,35 +78,40 @@ Why _not_ use this instead of the CDK/raw Terraform?
 
 # Generation
 
-As an example, to use `hashicorp/aws`, create a json file (ex: `terrars_aws.json`) with the specification of what you want to generate:
+While there are premade crates for some providers, you can generate code for new providers locally using `terrars-generate`.
 
-```json
-{
-  "provider": "hashicorp/aws",
-  "version": "4.48.0",
-  "include": [
-    "cognito_user_pool",
-    "cognito_user_pool_client",
-    "cognito_user_pool_domain",
-    "cognito_user_pool_ui_customization",
-    "route53_zone",
-    "route53_record",
-    "aws_acm_certificate",
-    "aws_acm_certificate_validation"
-  ],
-  "dest": "src/bin/mydeploy/tfschema/aws"
-}
-```
+1. Install the generate cli with `cargo install terrars`
 
-`tfschema/aws` must be an otherwise unused directory - it will be wiped when you genenerate the code. If `include` is missing or empty, this will generate everything (alternatively, you can use `exclude` to blacklist resources/datasources). Resources and datasources don't include the provider prefix (`aws_` in this example). Datasources start with `data_`.
+2. Create a config file.
+   As an example, to use `hashicorp/aws`, create a json file (ex: `terrars_aws.json`) with the specification of what you want to generate:
 
-Make sure you have `terraform` in your `PATH`. Run `cargo install terrars`, then `terrars-generate terrars_aws.json`.
+   ```json
+   {
+     "provider": "hashicorp/aws",
+     "version": "4.48.0",
+     "include": [
+       "cognito_user_pool",
+       "cognito_user_pool_client",
+       "cognito_user_pool_domain",
+       "cognito_user_pool_ui_customization",
+       "route53_zone",
+       "route53_record",
+       "aws_acm_certificate",
+       "aws_acm_certificate_validation"
+     ],
+     "dest": "src/bin/mydeploy/tfschema/aws"
+   }
+   ```
 
-The first time you do this, create a `src/bin/mydeploy/tfschema/mod.rs` file with this contents to root the generated provider:
+   `tfschema/aws` must be an otherwise unused directory - it will be wiped when you genenerate the code. If `include` is missing or empty, this will generate everything (alternatively, you can use `exclude` to blacklist resources/datasources). Resources and datasources don't include the provider prefix (`aws_` in this example). Datasources start with `data_`.
 
-```
-pub mod aws;
-```
+3. Make sure you have `terraform` in your `PATH`. Run `cargo install terrars`, then `terrars-generate terrars_aws.json`.
+
+4. The first time you do this, create a `src/bin/mydeploy/tfschema/mod.rs` file with this contents to root the generated provider:
+
+   ```
+   pub mod aws;
+   ```
 
 # General usage
 
