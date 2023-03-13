@@ -1,4 +1,4 @@
-Terrars is a tools for building Terraform stacks in Rust. This is an alternative to the CDK.
+Terrars is a tool for building Terraform stacks in Rust. This is an alternative to the [CDK](https://developer.hashicorp.com/terraform/cdktf).
 
 **See a working example** in [helloworld](helloworld).
 
