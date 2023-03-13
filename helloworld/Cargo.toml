@@ -8,13 +8,13 @@ poem = "1.3.55"
 tokio = { version = "1.26.0", features = ["rt-multi-thread"] }
 
 [build-dependencies]
-terrars = "0.1.4"
-terrars-fly-apps-fly = { version = "0.1.7", features = [
+terrars = "0.1.5"
+terrars-fly-apps-fly = { version = "0.1.8", features = [
     "app",
     "ip",
     "cert",
     "machine",
 ] }
-terrars-andrewbaxter-dinker = { version = "0.1.18", features = ["image"] }
-terrars-andrewbaxter-localrun = { version = "0.1.12", features = ["data_run"] }
-terrars-hashicorp-aws = { version = "0.1.8", features = ["route53_record"] }
+terrars-andrewbaxter-dinker = { version = "0.1.19", features = ["image"] }
+terrars-andrewbaxter-localrun = { version = "0.1.13", features = ["data_run"] }
+terrars-hashicorp-aws = { version = "0.1.9", features = ["route53_record"] }
