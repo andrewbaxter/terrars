@@ -28,7 +28,6 @@ use terrars_fly_apps_fly::{
     BuildMachine,
     BuildMachineServicesEl,
     BuildMachineServicesElPortsEl,
-    MachineServicesEl,
 };
 use terrars_hashicorp_aws::{
     BuildProviderAws,
@@ -41,8 +40,7 @@ fn main() {
     let deploy_root = root.join("deploy");
     let tf_root = deploy_root.join("tf");
     fs::create_dir_all(&tf_root).unwrap();
-    let mut stack0 = BuildStack {}.build();
-    let stack = &mut stack0;
+    let stack = &mut BuildStack {}.build();
 
     // Input vars
     let aws_region = &BuildVariable { tf_id: "aws_region".into() }.build(stack);
@@ -83,7 +81,7 @@ fn main() {
         type_: "v4".into(),
     }.build(stack);
     let app_cert = BuildCert {
-        tf_id: "zO8BU3L6I".into(),
+        tf_id: "zKUQBRBGM".into(),
         app: fly_app.id().into(),
         hostname: domain.into(),
     }.build(stack);
@@ -108,13 +106,15 @@ fn main() {
                 "cargo",
                 "build",
                 "--target=x86_64-unknown-linux-musl",
-                "--bin=server",
+                "--bin=helloworld",
                 "--release"
             ].into(),
         }
             .build(stack)
             .set_working_dir(root.to_str().unwrap())
-            .set_outputs(primvec![root.join("target/x86_64-unknown-linux-musl/release/server").to_str().unwrap()]);
+            .set_outputs(
+                primvec![root.join("../target/x86_64-unknown-linux-musl/release/helloworld").to_str().unwrap()],
+            );
     let bin_server = rust.outputs().get(0);
     let bin_server_hash = rust.output_hashes().get(0);
     let image_app = {
@@ -127,12 +127,12 @@ fn main() {
                     tf_substr(bin_server_hash, 0, 8),
                     "{short_hash}"
                 ).into(),
-                from: "docker://busybox:1.36.0-glibc".into(),
                 files: vec![BuildImageFilesEl { source: bin_server.into() }.build().set_mode("0755")],
             }
                 .build(stack)
-                .depends_on(&rust)
-                .set_cmd(primvec!["/server"])
+                .set_arch("amd64")
+                .set_os("linux")
+                .set_cmd(primvec!["/helloworld"])
                 .set_ports(
                     [80]
                         .into_iter()
@@ -158,12 +158,12 @@ fn main() {
         .set_cpus(1f64)
         .set_memorymb(256f64)
         .set_app(fly_app.id())
-        .set_services([80f64].into_iter().map(|port| BuildMachineServicesEl {
-            internal_port: port.into(),
-            ports: vec![BuildMachineServicesElPortsEl { port: port.into() }.build()],
+        .set_services(vec![BuildMachineServicesEl {
+            internal_port: 80f64.into(),
+            ports: vec![BuildMachineServicesElPortsEl { port: 443f64.into() }.build().set_handlers(primvec!["tls"])],
             protocol: "tcp".into(),
-        }.build()).collect::<Vec<MachineServicesEl>>());
+        }.build()]);
 
     // Save the stack file
-    fs::write(tf_root.join("stack.json"), stack.serialize(&tf_root.join("state.json")).unwrap()).unwrap();
+    fs::write(tf_root.join("stack.tf.json"), stack.serialize(&tf_root.join("state.json")).unwrap()).unwrap();
 }

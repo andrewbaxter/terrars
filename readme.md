@@ -137,9 +137,9 @@ As a rule of thumb
 
 Lists, sets, and record references have a `.map` method which takes care of all the different "for" methods in Terraform. Specifically
 
-- Call `.map` and define a resource: does resource-level for-each (per Terraform limitations, this cannot be done on lists derived from other resources so has very limited use)
+- Call `.map` and define a resource: does resource-level for-each (per Terraform limitations, this cannot be done on lists derived from other resources so has very limited use, you should probably just use a for loop)
 - Call `.map` and define a block element: does block-level for-each
-- Call `.map` and return an attribute reference: produces an attribute for expression
+- Call `.map` and return an attribute reference: produces an attribute `for` expression
 
 `.map` always produces a list reference, but this can be assgned to set fields as well. `.map_rec` is similar to `.map` but results in a record.
 
@@ -186,4 +186,4 @@ This way, all normal string formatting methods should retain the expected expres
 
 # The name
 
-I originally called this `terrarust` but then I realized it sounded like terrorist so I decided to play it safe and went with `terrars`.
+I originally called this `terrarust` but then I realized it sounded like terrorist so I decided to play it safe and chopped out the `u` `t` which stands for unreal tournament.
