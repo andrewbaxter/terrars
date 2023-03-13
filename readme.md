@@ -1,6 +1,6 @@
 Terrars is a tools for building Terraform stacks in Rust. This is an alternative to the CDK.
 
-**See a full example** in [helloworld](helloworld)!
+**See a working example** in [helloworld](helloworld).
 
 **Current status**: Usable, but may have some rough edges and missing features. I may continue to tweak things to improve ergonomics.
 
@@ -34,21 +34,21 @@ Why _not_ use this instead of the CDK?
 - [hashicorp/random](https://github.com/andrewbaxter/terrars-hashicorp-random)
 - [kreuzwerker/docker](https://github.com/andrewbaxter/terrars-kreuzwerker-docker)
 
-# Usage
+# Getting started
 
-**Note**: There's a full example in [helloworld](helloworld)!
+**Note**: There's a full, working example in [helloworld](helloworld).
 
-1. Install pre-generated bindings such as [terrars-andrewbaxter-stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe) or else generate your own (see [Generation] below) and enable features for the resources you want to use.
+1. Add `terrars` and pre-generated bindings such as [terrars-andrewbaxter-stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe) or else generate your own (see [Generation](#generation) below) to your project. Enable the features you want to use in the bindings.
 
 2. Develop your code (ex: `build.rs`)
 
    Create a `Stack` and set up providers:
 
    ```rust
-   let mut stack = BuildStack{}.build();
+   let mut stack = &mut BuildStack{}.build();
    BuildProviderStripe {
        token: STRIPE_TOKEN,
-   }.build(&mut stack);
+   }.build(stack);
    ```
 
    The first provider instance for a provider type will be used by default for that provider's resources, so you don't need to bind it.
@@ -58,10 +58,10 @@ Why _not_ use this instead of the CDK?
    ```rust
    let my_product = BuildProduct {
        name: "My Product".into(),
-   }.build(&mut stack);
+   }.build(stack);
    let my_price = BuildPrice {
        ...
-   }.build(&mut stack);
+   }.build(stack);
    my_price.set_product(my_product.id());
    ...
    ```
@@ -69,14 +69,14 @@ Why _not_ use this instead of the CDK?
    Finally, write the stack out:
 
    ```rust
-   stack.serialize("mystack.tf.json")?;
+   fs::write("mystack.tf.json", &stack.serialize("state.json")?)?;
    ```
 
-3. Call `terraform` on your stack as usual
+3. Call `terraform` as usual in the directory you generated `mystack.tf.json` in
 
    (`Stack` also has methods `run()` and `get_output()` to call `terraform` for you. You must have `terraform` in your path.)
 
-# Generation
+# Generating bindings
 
 While there are premade crates for some providers, you can generate code for new providers locally using `terrars-generate`.
 
@@ -121,17 +121,17 @@ There are `Build*` structs containing required parameters and a `build` method f
 
 ## Expressions
 
-In Terraform, all fields regardless of type can be assigned a string template expression for values computed during stack application. Since all strings can potentially be templates, non-template strings must be escaped to avoid accidental interpolation.
+Background: In Terraform, all fields regardless of type can be assigned a string template expression for values computed during stack application. Since all strings can potentially be templates, non-template strings must be escaped to avoid accidental interpolation.
 
-When defining resources and calling methods, `String` and `&str` will be treated as non-template strings and appropriately escaped. To avoid the escaping, you can produce a `PrimExpr` object via `stack.str_expr` (to produce an expr that evaluates to a string) or `stack.expr` for other expression types. To produce the expression itself you can use `format!()` as usual, but **note** - you must call `.raw()` on any `PrimExpr`s you use in the new expression to avoid double-unescaping issues.
+How `terrars` handles it: When defining resources and calling methods, `String` and `&str` will be treated as non-template strings and appropriately escaped. To avoid the escaping, you can produce a `PrimExpr` object via `stack.str_expr` (to produce an expr that evaluates to a string) or `stack.expr` for other expression types. To produce the expression body you can use `format!()` as usual, but **note** - you must call `.raw()` on any `PrimExpr`s you use in the new expression to avoid double-antiescaping issues.
 
-If Terraform gives you an error about something with the text `_TERRARS_SENTINEL*` it means you probably missed a `.raw()` call on that value.
+If Terraform gives you an error about something with the text `_TERRARS_SENTINEL*` it means you probably missed a `.raw()` call on that value (some expression was double-antiescaped).
 
 As a rule of thumb
 
-1. `expression` -> `string`/`field` is OK. The expression gets turned into a sentinel value and interpolated during writing the template
-2. `string`/`field` _with no sentinel values_ (literals, etc) -> `expression` is OK.
-3. `string`/`field` _containing sentinel values_ -> `expression` is BAD. The sentinel replacement will happen twice and you'll have broken data. This can only happen if you convert an expression into a string and then back.
+1. Converting from `expression` to `string`/`field` is OK. The expression gets turned into a sentinel value and interpolated during writing the template
+2. Converting from `string`/`field` _with no sentinel values_ (literals, etc) to `expression` is OK.
+3. Converting `string`/`field` _containing sentinel values_ -> `expression` is BAD. The sentinel replacement will happen twice and you'll have broken data. This can only happen if you convert an expression into a string and then back, so shouldn't happen often.
 
 ## For-each
 
@@ -172,7 +172,7 @@ This way, all normal string formatting methods should retain the expected expres
 
 - Not all Terraform features have been implemented
 
-  The only one I'm aware of missing at the moment is resource "provisioning".
+  The only one I'm aware of missing at the moment is resource Provisioning.
 
 - `ignore_changes` takes strings rather than an enum
 
