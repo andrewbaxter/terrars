@@ -538,7 +538,7 @@ name = "helloworld"
 version = "0.1.0"
 dependencies = [
  "poem",
- "terrars 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "terrars 0.1.4",
  "terrars-andrewbaxter-dinker",
  "terrars-andrewbaxter-localrun",
  "terrars-fly-apps-fly",
@@ -1399,6 +1399,8 @@ dependencies = [
 [[package]]
 name = "terrars"
 version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86fcfb1fe3e10ffbdabf227d9bd766d6f63ef6a3e734f2ff2be60ec593f728ef"
 dependencies = [
  "anyhow",
  "cargo_toml",
@@ -1420,9 +1422,7 @@ dependencies = [
 
 [[package]]
 name = "terrars"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86fcfb1fe3e10ffbdabf227d9bd766d6f63ef6a3e734f2ff2be60ec593f728ef"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "cargo_toml",
@@ -1450,7 +1450,7 @@ checksum = "6dcc0c4eaad98f7d1c427c246acec3c8e065840923cd5a416715e0a2f3feca99"
 dependencies = [
  "serde",
  "serde_json",
- "terrars 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "terrars 0.1.4",
 ]
 
 [[package]]
@@ -1461,7 +1461,7 @@ checksum = "7ae7b67fe39ae1ce078a47dac86337df4a4f42c8d3da4c60a34134cf2359c08b"
 dependencies = [
  "serde",
  "serde_json",
- "terrars 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "terrars 0.1.4",
 ]
 
 [[package]]
@@ -1472,7 +1472,7 @@ checksum = "e2dd45c89cf6da272b4d802756cfb37f56c9bf2444195dd6194d2a76527743fa"
 dependencies = [
  "serde",
  "serde_json",
- "terrars 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "terrars 0.1.4",
 ]
 
 [[package]]
@@ -1483,7 +1483,7 @@ checksum = "2960ce50aa555b431406dac174e6ecf7ec5b5651889603187b969b2b697ac45d"
 dependencies = [
  "serde",
  "serde_json",
- "terrars 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "terrars 0.1.4",
 ]
 
 [[package]]
