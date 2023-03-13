@@ -1444,9 +1444,9 @@ dependencies = [
 
 [[package]]
 name = "terrars-andrewbaxter-dinker"
-version = "0.1.17"
+version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dcc0c4eaad98f7d1c427c246acec3c8e065840923cd5a416715e0a2f3feca99"
+checksum = "a9a7f1bb8051213c434339a4d50f8fe51f573f9e2441170fabb129b4a014647e"
 dependencies = [
  "serde",
  "serde_json",

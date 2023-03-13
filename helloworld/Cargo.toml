@@ -15,6 +15,6 @@ terrars-fly-apps-fly = { version = "0.1.7", features = [
     "cert",
     "machine",
 ] }
-terrars-andrewbaxter-dinker = { version = "0.1.17", features = ["image"] }
+terrars-andrewbaxter-dinker = { version = "0.1.18", features = ["image"] }
 terrars-andrewbaxter-localrun = { version = "0.1.12", features = ["data_run"] }
 terrars-hashicorp-aws = { version = "0.1.8", features = ["route53_record"] }
