@@ -15,7 +15,7 @@ pub fn tf_base64decode(stack: &Stack, e: PrimExpr<String>) -> PrimExpr<String> {
 
 /// Generates a call to Terraform method `substr`.
 pub fn tf_substr(stack: &Stack, e: PrimExpr<String>, offset: usize, length: usize) -> PrimExpr<String> {
-    return stack.func("substr").a(e).a(offset).a(length).into();
+    return stack.func("substr").a(e).a(stack.lit_expr(offset as i64)).a(stack.lit_expr(length as i64)).into();
 }
 
 /// Generates a call to Terraform method `trimsuffix`.

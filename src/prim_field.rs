@@ -9,6 +9,7 @@ use crate::utils::REPLACE_EXPRS;
 
 pub trait TfPrimitiveType {
     fn extract_variable_type() -> String;
+    fn to_expr_raw(&self) -> String;
     fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer;
@@ -17,6 +18,10 @@ pub trait TfPrimitiveType {
 impl TfPrimitiveType for String {
     fn extract_variable_type() -> String {
         "string".into()
+    }
+
+    fn to_expr_raw(&self) -> String {
+        return format!("\"{}\"", self.replace("\\", "\\\\").replace("\"", "\\\""));
     }
 
     fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -41,6 +46,14 @@ impl TfPrimitiveType for bool {
         "bool".into()
     }
 
+    fn to_expr_raw(&self) -> String {
+        if *self {
+            return "true".to_string();
+        } else {
+            return "false".to_string();
+        }
+    }
+
     fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
@@ -51,6 +64,10 @@ impl TfPrimitiveType for bool {
 impl TfPrimitiveType for i64 {
     fn extract_variable_type() -> String {
         "int".into()
+    }
+
+    fn to_expr_raw(&self) -> String {
+        return self.to_string();
     }
 
     fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -65,6 +82,10 @@ impl TfPrimitiveType for f64 {
         "float".into()
     }
 
+    fn to_expr_raw(&self) -> String {
+        return self.to_string();
+    }
+
     fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
@@ -72,6 +93,8 @@ impl TfPrimitiveType for f64 {
     }
 }
 
+/// Helper trait representing core interchange values: `f64`, `i64`, `String`,
+/// `bool`.
 pub trait PrimType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { }
 
 impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimType for T { }

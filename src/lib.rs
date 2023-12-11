@@ -153,18 +153,18 @@ pub struct Stack {
 }
 
 impl Stack {
-    /// Use to get an expression from a string literal (ex: `lit_expr("hi")`) for use
-    /// in other expressions, like Terraform function calls. You cannot convert from an
-    /// expression to a string then back to an expression again.
-    pub fn str_expr(&self, expr: impl ToString) -> PrimExpr<String> {
-        PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
+    /// Turn a value into into an expression that evaluates to that value (ex:
+    /// `lit_expr(44)` or `lit_expr(true)`) for use in other expressions, like
+    /// Terraform function calls. NOTE: Converting from an expression to a string then
+    /// back to an expression again will result in double escaping (broken SENTINEL
+    /// junk).
+    pub fn lit_expr<T: PrimType>(&self, expr: T) -> PrimExpr<T> {
+        PrimExpr(self.shared.clone(), expr.to_expr_raw(), Default::default())
     }
 
-    /// Use to get an expression from a literal (ex: `lit_expr(44)` or
-    /// `lit_expr(true)`) for use in other expressions, like Terraform function calls.
-    /// You cannot convert from an expression to a string then back to an expression
-    /// again.
-    pub fn lit_expr<T: PrimType>(&self, expr: impl ToString) -> PrimExpr<T> {
+    /// Turn a raw expression string into a `PrimExpr` - the string must be properly
+    /// escaped, etc.
+    pub fn expr<T: PrimType>(&self, expr: impl ToString) -> PrimExpr<T> {
         PrimExpr(self.shared.clone(), expr.to_string(), Default::default())
     }
 

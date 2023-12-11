@@ -14,59 +14,16 @@ pub struct Func {
     pub(crate) first: bool,
 }
 
-pub trait ToFuncArg {
-    fn to_func_arg(&self, out: &mut String);
-}
-
-impl ToFuncArg for String {
-    fn to_func_arg(&self, out: &mut String) {
-        self.as_str().to_func_arg(out)
-    }
-}
-
-impl<'a> ToFuncArg for &'a str {
-    fn to_func_arg(&self, out: &mut String) {
-        out.push_str(&format!("\"{}\"", self.replace("\\", "\\\\").replace("\"", "\\\"")));
-    }
-}
-
-impl ToFuncArg for i64 {
-    fn to_func_arg(&self, out: &mut String) {
-        out.push_str(&self.to_string());
-    }
-}
-
-impl ToFuncArg for usize {
-    fn to_func_arg(&self, out: &mut String) {
-        out.push_str(&self.to_string());
-    }
-}
-
-impl ToFuncArg for bool {
-    fn to_func_arg(&self, out: &mut String) {
-        if *self {
-            out.push_str("true");
-        } else {
-            out.push_str("false");
-        }
-    }
-}
-
-impl<T: PrimType> ToFuncArg for PrimExpr<T> {
-    fn to_func_arg(&self, out: &mut String) {
-        out.push_str(&self.expr_raw().1);
-    }
-}
-
 impl Func {
     /// Add an argument to the function call
-    pub fn a(mut self, s: impl ToFuncArg) -> Self {
+    pub fn a<T: PrimType>(mut self, s: PrimExpr<T>) -> Self {
         if !self.first {
             self.data.push_str(", ");
         } else {
             self.first = false;
         }
-        s.to_func_arg(&mut self.data);
+        let (_, s) = s.expr_raw();
+        self.data.push_str(&s);
         self
     }
 
