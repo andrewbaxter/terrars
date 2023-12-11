@@ -54,6 +54,7 @@ pub mod prim_ref;
 pub mod set_field;
 pub mod set_ref;
 pub mod variable;
+pub mod helpers;
 
 pub use ref_::*;
 pub use expr::*;
@@ -69,6 +70,7 @@ pub use set_field::*;
 pub use set_ref::*;
 use utils::REPLACE_EXPRS;
 pub use variable::*;
+pub use helpers::*;
 
 /// Use this to create a new stack.
 pub struct BuildStack {}
