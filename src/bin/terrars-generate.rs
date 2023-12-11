@@ -1,9 +1,14 @@
-use anyhow::{
-    anyhow,
-    Context,
-    Result,
+use aargvark::{
+    Aargvark,
+    AargvarkJson,
+    vark,
 };
-use clap::Parser;
+use loga::{
+    ea,
+    ResultContext,
+    DebugDisplay,
+    fatal,
+};
 use proc_macro2::{
     Ident,
     TokenStream,
@@ -17,14 +22,6 @@ use serde::{
     Deserialize,
 };
 use serde_json::json;
-use sloggers::{
-    terminal::{
-        Destination,
-        TerminalLoggerBuilder,
-    },
-    types::Severity,
-    Build,
-};
 use std::{
     collections::HashSet,
     fs::{
@@ -54,32 +51,26 @@ use crate::generatelib::{
 pub mod generatelib;
 
 pub trait CollCommand {
-    fn run(&mut self) -> Result<()>;
+    fn run(&mut self) -> Result<(), loga::Error>;
 }
 
 impl CollCommand for Command {
-    fn run(&mut self) -> Result<()> {
-        match match self.output() {
+    fn run(&mut self) -> Result<(), loga::Error> {
+        match self.output() {
             Ok(o) => {
                 if o.status.success() {
                     Ok(())
                 } else {
-                    Err(anyhow!("Exit code indicated error: {:?}", o))
+                    Err(loga::err_with("Exit code indicated error", ea!(status = o.dbg_str())))
                 }
             },
             Err(e) => Err(e.into()),
-        } {
-            Ok(()) => Ok(()),
-            Err(e) => Err(anyhow!("Failed to run {:?}", &self).context(e)),
-        }
+        }.context_with("Failed to run", ea!(command = self.dbg_str()))?;
+        return Ok(());
     }
 }
 
 fn main() {
-    let mut builder = TerminalLoggerBuilder::new();
-    builder.level(Severity::Debug);
-    builder.destination(Destination::Stderr);
-    let root_log = builder.build().unwrap();
     match es!({
         #[derive(Serialize, Deserialize)]
         struct Config {
@@ -91,22 +82,20 @@ fn main() {
             feature_gate: Option<PathBuf>,
         }
 
-        #[derive(Parser)]
+        #[derive(Aargvark)]
         struct Arguments {
-            configs: Vec<PathBuf>,
-            #[arg(long)]
-            dump: bool,
+            /// Path to terrars config jsons.
+            configs: Vec<AargvarkJson<Config>>,
+            /// Save the provider json in this dir (debug helper).
+            dump: Option<()>,
         }
 
-        let args = Arguments::parse();
+        let args = vark::<Arguments>();
         if args.configs.is_empty() {
-            return Err(anyhow!("No configs specified; nothing to do"));
+            return Err(loga::err("No configs specified; nothing to do"));
         }
         for config in args.configs {
-            let config =
-                serde_json::from_slice::<Config>(
-                    &fs::read(&config).context("Couldn't find config at specified location")?,
-                ).context("Error deserializing config json")?;
+            let config = config.value;
             let (vendor, shortname) =
                 config.provider.split_once("/").unwrap_or_else(|| ("hashicorp".into(), &config.provider));
             let provider_prefix = format!("{}_", shortname);
@@ -141,43 +130,47 @@ fn main() {
                     .output()
                     .context("Error outputting terraform provider schema")?
                     .stdout;
-            if args.dump {
+            if args.dump.is_some() {
                 fs::write("dump.json", &schema_raw)?;
             }
             let schema: ProviderSchemas =
                 serde_json::from_slice(&schema_raw).context("Error parsing provider schema json from terraform")?;
 
             // Generate
-            fn write_file(path: &Path, contents: Vec<TokenStream>) -> Result<()> {
-                match es!({
+            fn write_file(path: &Path, contents: Vec<TokenStream>) -> Result<(), loga::Error> {
+                es!({
                     File::create(&path)
                         .context("Failed to create rust file")?
                         .write_all(
-                            genemichaels::format_ast(syn::parse2::<syn::File>(quote!(#(#contents) *)).map_err(|e| {
-                                anyhow!(
-                                    "Failed to parse generated code AST for formatting: {}\n\n{}",
-                                    e,
-                                    contents
-                                        .iter()
-                                        .map(|s| s.to_string())
-                                        .collect::<Vec<String>>()
-                                        .join("\n")
-                                        .lines()
-                                        .enumerate()
-                                        .map(|(ln, l)| format!("{:0>4} {}", ln + 1, l))
-                                        .collect::<Vec<String>>()
-                                        .join("\n")
-                                )
-                            })?, &genemichaels::FormatConfig::default(), Default::default())?.rendered.as_bytes(),
+                            genemichaels::format_ast(
+                                syn::parse2::<syn::File>(
+                                    quote!(#(#contents) *),
+                                ).context_with(
+                                    "Failed to parse generated code AST for formatting",
+                                    ea!(
+                                        context =
+                                            contents
+                                                .iter()
+                                                .map(|s| s.to_string())
+                                                .collect::<Vec<String>>()
+                                                .join("\n")
+                                                .lines()
+                                                .enumerate()
+                                                .map(|(ln, l)| format!("{:0>4} {}", ln + 1, l))
+                                                .collect::<Vec<String>>()
+                                                .join("\n")
+                                    ),
+                                )?,
+                                &genemichaels::FormatConfig::default(),
+                                Default::default(),
+                            )
+                                .map_err(|e| loga::err_with("Error formatting generated code", ea!(err = e)))?
+                                .rendered
+                                .as_bytes(),
                         )
                         .context("Failed to write rust file")?;
                     Ok(())
-                }) {
-                    Ok(_) => { },
-                    Err(e) => Err(e).with_context(|| {
-                        format!("Failed to write generated code to {}", path.to_string_lossy())
-                    })?,
-                }
+                }).context_with("Failed to write generate code", ea!(path = path.to_string_lossy()))?;
                 Ok(())
             }
 
@@ -193,9 +186,10 @@ fn main() {
             // Provider type + provider
             let provider_schema = {
                 let key = format!("registry.terraform.io/{}/{}", vendor, shortname);
-                schema.provider_schemas.get(&key).ok_or_else(|| {
-                    anyhow!("Missing provider schema for listed provider {}", config.provider)
-                })?
+                schema
+                    .provider_schemas
+                    .get(&key)
+                    .context_with("Missing provider schema for listed provider", ea!(provider = config.provider))?
             };
             let provider_name_parts = &shortname.split("-").map(ToString::to_string).collect::<Vec<String>>();
             let provider_dir = config.dest;
@@ -292,13 +286,16 @@ fn main() {
             for (resource_name, resource) in &provider_schema.resource_schemas {
                 let mut out = rustfile_template();
                 out.push(quote!(use super:: provider:: #provider_ident;));
-                let use_name_parts = resource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
-                    anyhow!(
-                        "resource [[{}]] name missing expected provider prefix [[{}]]",
-                        resource_name,
-                        provider_prefix
-                    )
-                })?.split("_").map(ToString::to_string).collect::<Vec<String>>();
+                let use_name_parts =
+                    resource_name
+                        .strip_prefix(&provider_prefix)
+                        .context_with(
+                            "Name missing expected provider prefix",
+                            ea!(resource = resource_name, prefix = provider_prefix),
+                        )?
+                        .split("_")
+                        .map(ToString::to_string)
+                        .collect::<Vec<String>>();
                 let nice_resource_name = to_snake(&use_name_parts);
                 if whitelist && !include.remove(&nice_resource_name) {
                     continue;
@@ -484,13 +481,19 @@ fn main() {
                 let mut out = rustfile_template();
                 out.push(quote!(use super:: provider:: #provider_ident;));
                 let use_name_parts =
-                    ["data"].into_iter().chain(datasource_name.strip_prefix(&provider_prefix).ok_or_else(|| {
-                        anyhow!(
-                            "data source [[{}]] name missing expected provider prefix [[{}]]",
-                            datasource_name,
-                            provider_prefix
+                    ["data"]
+                        .into_iter()
+                        .chain(
+                            datasource_name
+                                .strip_prefix(&provider_prefix)
+                                .context_with(
+                                    "Name missing expected provider prefix",
+                                    ea!(datasource = datasource_name, prefix = provider_prefix),
+                                )?
+                                .split("_"),
                         )
-                    })?.split("_")).map(ToString::to_string).collect::<Vec<String>>();
+                        .map(ToString::to_string)
+                        .collect::<Vec<String>>();
                 let nice_datasource_name = to_snake(&use_name_parts);
                 if whitelist && !include.remove(&nice_datasource_name) {
                     continue;
@@ -625,7 +628,9 @@ fn main() {
             }
             write_file(&provider_dir.join("mod.rs"), mod_out)?;
             if whitelist && !include.is_empty() {
-                return Err(anyhow!("The following included resources/datasources were not found: {:?}", include));
+                return Err(
+                    loga::err_with("Included resources/datasources were not found", ea!(included = include.dbg_str())),
+                );
             }
             if features.len() > 0 {
                 let cargo_path = config.feature_gate.unwrap();
@@ -633,13 +638,11 @@ fn main() {
                     cargo_toml::Manifest::from_slice(
                         &fs::read(
                             &cargo_path,
-                        ).with_context(
-                            || format!(
-                                "Error opening Cargo.toml at {} to update features",
-                                cargo_path.to_string_lossy()
-                            ),
+                        ).context_with(
+                            "Error opening Cargo.toml to update features",
+                            ea!(path = cargo_path.to_string_lossy()),
                         )?,
-                    ).with_context(|| format!("Error parsing Cargo.toml at {}", cargo_path.to_string_lossy()))?;
+                    ).context_with("Error parsing Cargo.toml", ea!(path = cargo_path.to_string_lossy()))?;
                 manifest.features.clear();
                 for f in features {
                     manifest.features.insert(f, vec![]);
@@ -647,16 +650,14 @@ fn main() {
                 fs::write(
                     &cargo_path,
                     &toml::to_vec(&manifest).context("Error serializing modified Cargo.toml")?,
-                ).with_context(|| format!("Error writing to Cargo.toml at {}", cargo_path.to_string_lossy()))?;
+                ).context_with("Error writing to Cargo.toml", ea!(path = cargo_path.to_string_lossy()))?;
             }
         }
         Ok(())
     }) {
         Ok(_) => { },
         Err(e) => {
-            err!(root_log, "Command failed with error", err = format!("{:?}", e));
-            drop(root_log);
-            std::process::exit(1);
+            fatal(e);
         },
     }
 }

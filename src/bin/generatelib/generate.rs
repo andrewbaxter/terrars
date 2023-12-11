@@ -276,7 +276,11 @@ fn generate_type(
                     element_ref_type.map(|(_, r2)| (quote!(SetRef), quote!(SetRef < #r2 >))),
                 )
             },
-            super::sourceschema::NestingMode::Single => unreachable!(),
+            super::sourceschema::NestingMode::Single => {
+                let (element_type, element_ref_type) =
+                    generate_agg_type_obj_nested(extra_types, path, &x.attributes);
+                (element_type, element_ref_type)
+            },
         },
         (None, None) | (Some(_), Some(_)) => unreachable!(),
     }

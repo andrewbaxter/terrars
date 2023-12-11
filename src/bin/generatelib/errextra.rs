@@ -1,7 +1,5 @@
-use anyhow::Result;
-
 #[inline(always)]
-pub fn err_stop<R, F: FnOnce() -> Result<R>>(f: F) -> Result<R> {
+pub fn err_stop<R, F: FnOnce() -> Result<R, loga::Error>>(f: F) -> Result<R, loga::Error> {
     f()
 }
 

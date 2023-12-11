@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use crate::{
     expr::{
         Expr,
@@ -8,19 +9,34 @@ use crate::{
     PrimField,
 };
 
+/// Generates a call to Terraform method `base64encode`.
 pub fn tf_base64encode(e: PrimExpr<String>) -> PrimExpr<String> {
     let (shared, raw) = e.expr_raw();
     PrimExpr(shared.clone(), format!("base64encode({})", raw), Default::default())
 }
 
+/// Generates a call to Terraform method `base64decode`.
 pub fn tf_base64decode(e: PrimExpr<String>) -> PrimExpr<String> {
     let (shared, raw) = e.expr_raw();
     PrimExpr(shared.clone(), format!("base64decode({})", raw), Default::default())
 }
 
+/// Generates a call to Terraform method `substr`.
 pub fn tf_substr(e: PrimExpr<String>, offset: usize, length: usize) -> PrimExpr<String> {
     let (shared, raw) = e.expr_raw();
     PrimExpr(shared.clone(), format!("substr({}, {}, {})", raw, offset, length), Default::default())
+}
+
+/// Generates a call to Terraform method `trimsuffix`.
+pub fn tf_trim_suffix(original: PrimExpr<String>, suffix: PrimExpr<String>) -> PrimField<String> {
+    let (shared, _) = original.expr_raw();
+    return Func::new(shared, "trimsuffix").e(&original).e(&suffix).into();
+}
+
+/// Generates a call to Terraform method `trimprefix`.
+pub fn tf_trim_prefix(original: PrimExpr<String>, prefix: PrimExpr<String>) -> PrimField<String> {
+    let (shared, _) = original.expr_raw();
+    return Func::new(shared, "trimprefix").e(&original).e(&prefix).into();
 }
 
 pub struct Func {
@@ -62,6 +78,14 @@ impl ToFuncLit for bool {
 }
 
 impl Func {
+    pub fn new(shared: &StackShared, name: impl Display) -> Self {
+        return Func {
+            shared: shared.clone(),
+            data: format!("{}(", name),
+            first: true,
+        };
+    }
+
     /// Add a literal argument to the function call
     pub fn l(mut self, s: impl ToFuncLit) -> Self {
         if !self.first {
