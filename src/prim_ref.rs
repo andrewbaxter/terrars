@@ -21,6 +21,7 @@ use crate::{
 };
 use std::fmt::Display;
 
+/// This represents a value that can be passed to functions, put in fields, etc.
 pub struct PrimExpr<T: PrimType>(pub(crate) StackShared, pub(crate) String, pub(crate) PhantomData<T>);
 
 impl<T: PrimType> Expr<T> for PrimExpr<T> {

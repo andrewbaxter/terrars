@@ -4,9 +4,25 @@ use crate::{
     },
     prim_ref::PrimExpr,
     PrimType,
-    StackShared,
     PrimField,
+    StackShared,
 };
+
+pub trait ToFuncArg<T: PrimType> {
+    fn to_func_arg(self, shared: &StackShared) -> PrimExpr<T>;
+}
+
+impl<T: PrimType> ToFuncArg<T> for T {
+    fn to_func_arg(self, shared: &StackShared) -> PrimExpr<T> {
+        return PrimExpr(shared.clone(), self.to_expr_raw(), Default::default());
+    }
+}
+
+impl<T: PrimType> ToFuncArg<T> for PrimExpr<T> {
+    fn to_func_arg(self, _shared: &StackShared) -> PrimExpr<T> {
+        return self;
+    }
+}
 
 pub struct Func {
     pub(crate) shared: StackShared,
@@ -16,13 +32,13 @@ pub struct Func {
 
 impl Func {
     /// Add an argument to the function call
-    pub fn a<T: PrimType>(mut self, s: PrimExpr<T>) -> Self {
+    pub fn a<T: PrimType>(mut self, s: impl ToFuncArg<T>) -> Self {
         if !self.first {
             self.data.push_str(", ");
         } else {
             self.first = false;
         }
-        let (_, s) = s.expr_raw();
+        let (_, s) = s.to_func_arg(&self.shared).expr_raw();
         self.data.push_str(&s);
         self
     }

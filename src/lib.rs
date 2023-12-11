@@ -154,11 +154,11 @@ pub struct Stack {
 
 impl Stack {
     /// Turn a value into into an expression that evaluates to that value (ex:
-    /// `lit_expr(44)` or `lit_expr(true)`) for use in other expressions, like
+    /// `expr_lit(44)` or `expr_lit("hi")`) for use in other expressions, like
     /// Terraform function calls. NOTE: Converting from an expression to a string then
     /// back to an expression again will result in double escaping (broken SENTINEL
     /// junk).
-    pub fn lit_expr<T: PrimType>(&self, expr: T) -> PrimExpr<T> {
+    pub fn expr_lit<T: PrimType>(&self, expr: T) -> PrimExpr<T> {
         PrimExpr(self.shared.clone(), expr.to_expr_raw(), Default::default())
     }
 

@@ -99,6 +99,9 @@ pub trait PrimType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { 
 
 impl<T: Serialize + Clone + TfPrimitiveType + Default + PartialEq> PrimType for T { }
 
+/// This is a helper type, used as a final conversion to put fields in the
+/// structures before serialization.
+///
 /// In Terraform, all fields, regardless of whether a it's an int or bool or
 /// whatever, can also take references like `${}`. `Primitive` represents this sort
 /// of value. Base types `i64` `f64` `String` and `bool` are supported, and you
