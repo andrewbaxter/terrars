@@ -1624,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "terrars"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "aargvark",
  "cargo_toml",
