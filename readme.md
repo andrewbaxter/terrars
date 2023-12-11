@@ -29,10 +29,11 @@ Why _not_ use this instead of the CDK?
 - [andrewbaxter/stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe)
 - [backblaze/b2](https://github.com/andrewbaxter/terrars-backblaze-b2)
 - [digitalocean/digitalocean](https://github.com/andrewbaxter/terrars-digitalocean-digitalocean)
-- [fly-apps/fly](https://github.com/andrewbaxter/terrars-fly-apps-fly)
+- [andrewbaxter/fly](https://github.com/andrewbaxter/terrars-andrewbaxter-fly)
 - [hashicorp/aws](https://github.com/andrewbaxter/terrars-hashicorp-aws)
 - [hashicorp/random](https://github.com/andrewbaxter/terrars-hashicorp-random)
 - [kreuzwerker/docker](https://github.com/andrewbaxter/terrars-kreuzwerker-docker)
+- [dnsimple/dnsimple](https://github.com/andrewbaxter/terrars-dnsimple-dnsimple)
 
 # Getting started
 
