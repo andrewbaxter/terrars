@@ -9,7 +9,7 @@ tokio = { version = "1.26.0", features = ["rt-multi-thread"] }
 
 [build-dependencies]
 terrars = "0.1.5"
-terrars-fly-apps-fly = { version = "0.1.8", features = [
+terrars-andrewbaxter-fly = { version = "0.1.4", features = [
     "app",
     "ip",
     "cert",
@@ -17,4 +17,3 @@ terrars-fly-apps-fly = { version = "0.1.8", features = [
 ] }
 terrars-andrewbaxter-dinker = { version = "0.1.19", features = ["image"] }
 terrars-andrewbaxter-localrun = { version = "0.1.13", features = ["data_run"] }
-terrars-hashicorp-aws = { version = "0.1.9", features = ["route53_record"] }

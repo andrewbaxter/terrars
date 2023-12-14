@@ -8,6 +8,7 @@ use terrars::{
     BuildVariable,
     primvec,
     tf_substr,
+    tf_trim_prefix,
 };
 use terrars_andrewbaxter_dinker::{
     BuildProviderDinker,
@@ -18,10 +19,9 @@ use terrars_andrewbaxter_localrun::{
     BuildProviderLocalrun,
     BuildDataRun,
 };
-use terrars_fly_apps_fly::{
+use terrars_andrewbaxter_fly::{
     BuildProviderFly,
     BuildApp,
-    BuildIp,
     BuildMachine,
     BuildMachineServicesEl,
     BuildMachineServicesElPortsEl,
@@ -44,12 +44,7 @@ fn main() {
     BuildProviderDinker {}
         .build(stack)
         .set_cache_dir(deploy_root.join("dinker_cache").to_string_lossy().to_string());
-    BuildProviderFly {}
-        .build(stack)
-        .set_fly_api_token(&fly_token)
-        .set_useinternaltunnel(true)
-        .set_internaltunnelorg("personal")
-        .set_internaltunnelregion(fly_region);
+    BuildProviderFly {}.build(stack).set_fly_api_token(&fly_token);
 
     // Fly setup
     let fly_token_str = fly_token.to_string();
@@ -57,11 +52,6 @@ fn main() {
     let fly_app = BuildApp {
         tf_id: "z2IL6YNID".into(),
         name: "terrars-helloworld".into(),
-    }.build(stack);
-    BuildIp {
-        tf_id: "z57885UHY".into(),
-        app: fly_app.id().into(),
-        type_: "v4".into(),
     }.build(stack);
 
     // Docker image
@@ -89,7 +79,7 @@ fn main() {
             dest: format!(
                 "docker://registry.fly.io/{}:terrars-helloworld-{}-{}",
                 fly_app.name(),
-                tf_substr(bin_server_hash, 0, 8),
+                tf_substr(stack, bin_server_hash, 0, 8),
                 "{short_hash}"
             ).into(),
             files: vec![BuildImageFilesEl { source: bin_server.into() }.build().set_mode("0755")],
@@ -103,16 +93,16 @@ fn main() {
     // Fly machine
     BuildMachine {
         tf_id: "zIISRBA5Z".into(),
-        image: stack.func("trimprefix").e(&image_app.rendered_dest()).l("docker://").into(),
+        app: fly_app.id().into(),
+        image: tf_trim_prefix(stack, image_app.rendered_dest(), "docker://".to_string()).into(),
         region: fly_region.into(),
     }
         .build(stack)
         .depends_on(&image_app)
         .set_name("main")
-        .set_cputype("shared")
+        .set_cpu_type("shared")
         .set_cpus(1f64)
-        .set_memorymb(256f64)
-        .set_app(fly_app.id())
+        .set_memory(256f64)
         .set_services(vec![BuildMachineServicesEl {
             internal_port: 53f64.into(),
             ports: vec![
