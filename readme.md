@@ -24,16 +24,30 @@ Why _not_ use this instead of the CDK?
 
 # Pre-generated bindings
 
-- [andrewbaxter/dinker](https://github.com/andrewbaxter/terrars-andrewbaxter-dinker) - Lightweight Docker image building
-- [andrewbaxter/localrun](https://github.com/andrewbaxter/terrars-andrewbaxter-localrun) - External build scripts
-- [andrewbaxter/stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe)
-- [backblaze/b2](https://github.com/andrewbaxter/terrars-backblaze-b2)
+## Infrastructure
+
+- [hashicorp/aws](https://github.com/andrewbaxter/terrars-hashicorp-aws)
+- [hashicorp/google](https://github.com/andrewbaxter/terrars-hashicorp-google)
+- [hectorj/googlesiteverification](https://github.com/andrewbaxter/terrars-hectorj-googlesiteverification)
 - [digitalocean/digitalocean](https://github.com/andrewbaxter/terrars-digitalocean-digitalocean)
 - [andrewbaxter/fly](https://github.com/andrewbaxter/terrars-andrewbaxter-fly)
-- [hashicorp/aws](https://github.com/andrewbaxter/terrars-hashicorp-aws)
-- [hashicorp/random](https://github.com/andrewbaxter/terrars-hashicorp-random)
+
+## Other services
+
+- [cloudflare/cloudflare](https://github.com/andrewbaxter/terrars-cloudflare-cloudflare)
+- [integrations/github](https://github.com/andrewbaxter/terrars-integrations-github)
+- [andrewbaxter/stripe](https://github.com/andrewbaxter/terrars-andrewbaxter-stripe)
+- [backblaze/b2](https://github.com/andrewbaxter/terrars-backblaze-b2)
 - [kreuzwerker/docker](https://github.com/andrewbaxter/terrars-kreuzwerker-docker)
 - [dnsimple/dnsimple](https://github.com/andrewbaxter/terrars-dnsimple-dnsimple)
+
+## Local, software
+
+- [andrewbaxter/dinker](https://github.com/andrewbaxter/terrars-andrewbaxter-dinker) - Lightweight Docker image building
+- [andrewbaxter/localrun](https://github.com/andrewbaxter/terrars-andrewbaxter-localrun) - External build scripts
+- [hashicorp/random](https://github.com/andrewbaxter/terrars-hashicorp-random)
+- [hashicorp/local](https://github.com/andrewbaxter/terrars-hashicorp-local)
+- [hashicorp/tls](https://github.com/andrewbaxter/terrars-hashicorp-tls)
 
 # Getting started
 
