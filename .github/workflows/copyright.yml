@@ -1,0 +1,18 @@
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  confirm_agreement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ github.event.pull_request.body }}
+          PR_ID: ${{ github.event.pull_request.number }}
+        run: |
+          set -xeu
+          if ! grep -F "$(tail -n 1 .github/pull_request_template.md)" <(echo "$BODY"); then
+             gh pr close --comment "All changes must include the provided agreement to the copyright assignment." --delete-branch "$PR_ID"
+          fi
