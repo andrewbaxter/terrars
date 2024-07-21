@@ -17,7 +17,7 @@ use terrars_andrewbaxter_dinker::{
 };
 use terrars_andrewbaxter_localrun::{
     BuildProviderLocalrun,
-    BuildDataRun,
+    BuildDataAlwaysRun,
 };
 use terrars_andrewbaxter_fly::{
     BuildProviderFly,
@@ -56,7 +56,7 @@ fn main() {
 
     // Docker image
     let rust =
-        BuildDataRun {
+        BuildDataAlwaysRun {
             tf_id: "z22WPM6IT".into(),
             command: primvec![
                 "cargo",

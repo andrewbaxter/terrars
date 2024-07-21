@@ -142,7 +142,7 @@ fn main() {
                     File::create(&path)
                         .context("Failed to create rust file")?
                         .write_all(
-                            genemichaels::format_ast(
+                            genemichaels_lib::format_ast(
                                 syn::parse2::<syn::File>(
                                     quote!(#(#contents) *),
                                 ).context_with(
@@ -161,7 +161,7 @@ fn main() {
                                                 .join("\n")
                                     ),
                                 )?,
-                                &genemichaels::FormatConfig::default(),
+                                &genemichaels_lib::FormatConfig::default(),
                                 Default::default(),
                             )
                                 .map_err(|e| loga::err_with("Error formatting generated code", ea!(err = e)))?
@@ -222,8 +222,7 @@ fn main() {
                 let provider_builder_ident = format_ident!("BuildProvider{}", camel_name);
                 out.push(quote!{
                     #[derive(Serialize)] struct #provider_inner_mut_ident {
-                        #[serde(skip_serializing_if = "Option::is_none")]
-                        alias: Option<String>,
+                        #[serde(skip_serializing_if = "Option::is_none")] alias: Option < String >,
                         #(#provider_fields,) *
                     }
                     struct #provider_inner_ident {
@@ -264,7 +263,7 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #provider_builder_ident {
-                        pub fn build(self, stack: &mut Stack) -> #provider_ident {
+                        pub fn build(self, stack:& mut Stack) -> #provider_ident {
                             let out = #provider_ident(Rc:: new(#provider_inner_ident {
                                 data: RefCell:: new(#provider_inner_mut_ident {
                                     alias: None,
@@ -322,14 +321,10 @@ fn main() {
                 let resource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{
                     #[derive(Serialize)] struct #resource_inner_mut_ident {
-                        #[serde(skip_serializing_if = "Vec::is_empty")]
-                        depends_on: Vec<String>,
-                        #[serde(skip_serializing_if = "Option::is_none")]
-                        provider: Option<String>,
-                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-                        lifecycle: ResourceLifecycle,
-                        #[serde(skip_serializing_if = "Option::is_none")]
-                        for_each: Option<String>,
+                        #[serde(skip_serializing_if = "Vec::is_empty")] depends_on: Vec < String >,
+                        #[serde(skip_serializing_if = "Option::is_none")] provider: Option < String >,
+                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")] lifecycle: ResourceLifecycle,
+                        #[serde(skip_serializing_if = "Option::is_none")] for_each: Option < String >,
                         #(#resource_fields,) *
                     }
                     struct #resource_inner_ident {
@@ -423,14 +418,14 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #resource_builder_ident {
-                        pub fn build(self, stack: &mut Stack) -> #resource_ident {
+                        pub fn build(self, stack:& mut Stack) -> #resource_ident {
                             let out = #resource_ident(Rc:: new(#resource_inner_ident {
                                 shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
                                 data: RefCell:: new(#resource_inner_mut_ident {
-                                    depends_on: core::default::Default::default(),
+                                    depends_on: core:: default:: Default:: default(),
                                     provider: None,
-                                    lifecycle: core::default::Default::default(),
+                                    lifecycle: core:: default:: Default:: default(),
                                     for_each: None,
                                     #(#copy_builder_fields,) *
                                 }),
@@ -517,12 +512,9 @@ fn main() {
                 let datasource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{
                     #[derive(Serialize)] struct #datasource_inner_mut_ident {
-                        #[serde(skip_serializing_if = "Vec::is_empty")]
-                        depends_on: Vec<String>,
-                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")]
-                        provider: Option<String>,
-                        #[serde(skip_serializing_if = "Option::is_none")]
-                        for_each: Option<String>,
+                        #[serde(skip_serializing_if = "Vec::is_empty")] depends_on: Vec < String >,
+                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")] provider: Option < String >,
+                        #[serde(skip_serializing_if = "Option::is_none")] for_each: Option < String >,
                         #(#datasource_fields,) *
                     }
                     struct #datasource_inner_ident {
@@ -575,12 +567,12 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #datasource_builder_ident {
-                        pub fn build(self, stack: &mut Stack) -> #datasource_ident {
+                        pub fn build(self, stack:& mut Stack) -> #datasource_ident {
                             let out = #datasource_ident(Rc:: new(#datasource_inner_ident {
                                 shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
                                 data: RefCell:: new(#datasource_inner_mut_ident {
-                                    depends_on: core::default::Default::default(),
+                                    depends_on: core:: default:: Default:: default(),
                                     provider: None,
                                     for_each: None,
                                     #(#copy_builder_fields,) *
@@ -649,7 +641,7 @@ fn main() {
                 }
                 fs::write(
                     &cargo_path,
-                    &toml::to_vec(&manifest).context("Error serializing modified Cargo.toml")?,
+                    &toml::to_string(&manifest).context("Error serializing modified Cargo.toml")?.into_bytes(),
                 ).context_with("Error writing to Cargo.toml", ea!(path = cargo_path.to_string_lossy()))?;
             }
         }
