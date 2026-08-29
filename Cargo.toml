@@ -25,3 +25,6 @@ toml = "0.8"
 
 [workspace]
 members = ["helloworld"]
+
+[lints.clippy]
+all = "allow"

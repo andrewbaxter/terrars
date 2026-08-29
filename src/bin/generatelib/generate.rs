@@ -27,7 +27,10 @@ pub fn generate_simple_type(t: &ScalarTypeKey) -> (TokenStream, Option<(TokenStr
         ScalarTypeKey::String => quote!(String),
         ScalarTypeKey::Bool => quote!(bool),
     };
-    (quote!(PrimField < #raw >), Some((quote!(PrimExpr), quote!(PrimExpr < #raw >))))
+    (
+        quote!(terrars:: PrimField < #raw >),
+        Some((quote!(terrars:: PrimExpr), quote!(terrars:: PrimExpr < #raw >))),
+    )
 }
 
 pub fn add_path(v: &Vec<String>, e: &str) -> Vec<String> {
@@ -194,7 +197,7 @@ pub fn generate_field(
                 access_mut_self = quote!(self);
             }
             if let Some(block_type) = block {
-                out.dynamic_block_fields.push(quote!(#field_name: Option < DynamicBlock < #block_type >>));
+                out.dynamic_block_fields.push(quote!(#field_name: Option < terrars:: DynamicBlock < #block_type >>));
                 out
                     .mut_methods
                     .push(
@@ -203,13 +206,13 @@ pub fn generate_field(
                                 doc = #set_doc
                             ] pub fn #set_field_name(
                                 #pat_mut_self,
-                                v: impl Into < BlockAssignable < #block_type >>
+                                v: impl Into < terrars:: BlockAssignable < #block_type >>
                             ) -> Self {
                                 match v.into() {
-                                    BlockAssignable:: Literal(v) => {
+                                    terrars:: BlockAssignable:: Literal(v) => {
                                         #access_mut_self.#field_name = Some(v);
                                     },
-                                    BlockAssignable:: Dynamic(d) => {
+                                    terrars:: BlockAssignable:: Dynamic(d) => {
                                         #access_mut_self.dynamic.#field_name = Some(d);
                                     }
                                 }
@@ -265,7 +268,7 @@ fn generate_type(
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
                     quote!(Vec < #element_type >),
-                    element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
+                    element_ref_type.map(|(_, r2)| (quote!(terrars:: ListRef), quote!(terrars:: ListRef < #r2 >))),
                 )
             },
             super::sourceschema::NestingMode::Set => {
@@ -273,7 +276,7 @@ fn generate_type(
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
                     quote!(Vec < #element_type >),
-                    element_ref_type.map(|(_, r2)| (quote!(SetRef), quote!(SetRef < #r2 >))),
+                    element_ref_type.map(|(_, r2)| (quote!(terrars:: SetRef), quote!(terrars:: SetRef < #r2 >))),
                 )
             },
             super::sourceschema::NestingMode::Single => {
@@ -321,8 +324,8 @@ fn generate_agg_type_coll(
                 ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, &add_path(&path, "el"), a.as_ref()),
             };
             (
-                quote!(ListField < #element_type >),
-                element_ref_type.map(|(_, r2)| (quote!(ListRef), quote!(ListRef < #r2 >))),
+                quote!(terrars:: ListField < #element_type >),
+                element_ref_type.map(|(_, r2)| (quote!(terrars:: ListRef), quote!(terrars:: ListRef < #r2 >))),
             )
         },
         AggCollTypeKey::Set => {
@@ -332,8 +335,8 @@ fn generate_agg_type_coll(
                 ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, &add_path(&path, "el"), a.as_ref()),
             };
             (
-                quote!(SetField < #element_type >),
-                element_ref_type.map(|(_, r2)| (quote!(SetRef), quote!(SetRef < #r2 >))),
+                quote!(terrars:: SetField < #element_type >),
+                element_ref_type.map(|(_, r2)| (quote!(terrars:: SetRef), quote!(terrars:: SetRef < #r2 >))),
             )
         },
         AggCollTypeKey::Rec => {
@@ -347,8 +350,8 @@ fn generate_agg_type_coll(
                 },
             };
             (
-                quote!(RecField < #element_type >),
-                element_ref_type.map(|(_, r2)| (quote!(RecRef), quote!(RecRef < #r2 >))),
+                quote!(terrars:: RecField < #element_type >),
+                element_ref_type.map(|(_, r2)| (quote!(terrars:: RecRef), quote!(terrars:: RecRef < #r2 >))),
             )
         },
     }
@@ -382,7 +385,7 @@ pub fn generate_block_fields(
                 let (element_type, element_ref_type) =
                     generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
                 rust_type = quote!(Vec < #element_type >);
-                rust_ref_type = Some((quote!(ListRef), quote!(ListRef < #element_ref_type >)));
+                rust_ref_type = Some((quote!(terrars:: ListRef), quote!(terrars:: ListRef < #element_ref_type >)));
                 block_type = Some(element_type);
             },
             NestingMode::Set => {
@@ -482,10 +485,10 @@ pub fn generate_nonident_rust_type(
         impl #obj_ident {
             #(#resource_mut_methods) *
         }
-        impl ToListMappable for #obj_ident {
-            type O = BlockAssignable < #obj_ident >;
+        impl terrars::ToListMappable for #obj_ident {
+            type O = terrars::BlockAssignable < #obj_ident >;
             fn do_map(self, base: String) -> Self::O {
-                BlockAssignable::Dynamic(DynamicBlock {
+                terrars::BlockAssignable::Dynamic(terrars::DynamicBlock {
                     for_each: format!("${{{}}}", base),
                     iterator: "each".into(),
                     content: self,
@@ -503,11 +506,11 @@ pub fn generate_nonident_rust_type(
             }
         }
         pub struct #obj_ref_ident {
-            shared: StackShared,
+            shared: terrars::StackShared,
             base: String
         }
-        impl Ref for #obj_ref_ident {
-            fn new(shared: StackShared, base: String) -> #obj_ref_ident {
+        impl terrars::Ref for #obj_ref_ident {
+            fn new(shared: terrars::StackShared, base: String) -> #obj_ref_ident {
                 #obj_ref_ident {
                     shared: shared,
                     base: base.to_string(),
@@ -515,7 +518,7 @@ pub fn generate_nonident_rust_type(
             }
         }
         impl #obj_ref_ident {
-            fn shared(&self) -> &StackShared {
+            fn shared(&self) -> &terrars::StackShared {
                 &self.shared
             }
             #(#ref_ref_methods) *

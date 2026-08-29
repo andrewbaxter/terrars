@@ -187,8 +187,6 @@ This way, all normal string formatting methods should retain the expected expres
 
 - Not all Terraform features have been implemented
 
-  The only one I'm aware of missing at the moment is resource Provisioning.
-
 - `ignore_changes` takes strings rather than an enum
 
 - No variable or output static type checking

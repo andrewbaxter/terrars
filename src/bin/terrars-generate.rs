@@ -1,54 +1,56 @@
-use aargvark::{
-    Aargvark,
-    AargvarkJson,
-    vark,
-};
-use loga::{
-    ea,
-    ResultContext,
-    DebugDisplay,
-    fatal,
-};
-use proc_macro2::{
-    Ident,
-    TokenStream,
-};
-use quote::{
-    format_ident,
-    quote,
-};
-use serde::{
-    Serialize,
-    Deserialize,
-};
-use serde_json::json;
-use std::{
-    collections::HashSet,
-    fs::{
-        self,
-        create_dir_all,
-        File,
-        remove_dir_all,
-    },
-    io::Write,
-    path::{
-        Path,
-        PathBuf,
-    },
-    process::Command,
-};
-use crate::generatelib::{
-    generate::{
-        to_camel,
-        to_snake,
-        TopLevelFields,
-        generate_fields_from_value_map,
-        generate_block_fields,
-    },
-    sourceschema::ProviderSchemas,
-};
-
 pub mod generatelib;
+
+use {
+    aargvark::{
+        Aargvark,
+        AargvarkJson,
+        vark,
+    },
+    crate::generatelib::{
+        generate::{
+            TopLevelFields,
+            generate_block_fields,
+            generate_fields_from_value_map,
+            to_camel,
+            to_snake,
+        },
+        sourceschema::ProviderSchemas,
+    },
+    loga::{
+        DebugDisplay,
+        ResultContext,
+        ea,
+        fatal,
+    },
+    proc_macro2::{
+        Ident,
+        TokenStream,
+    },
+    quote::{
+        format_ident,
+        quote,
+    },
+    serde::{
+        Deserialize,
+        Serialize,
+    },
+    serde_json::json,
+    std::{
+        collections::HashSet,
+        fs::{
+            File,
+            create_dir_all,
+            remove_dir_all,
+            self,
+        },
+        io::Write,
+        path::{
+            Path,
+            PathBuf,
+        },
+        process::Command,
+    },
+};
 
 pub trait CollCommand {
     fn run(&mut self) -> Result<(), loga::Error>;
@@ -174,13 +176,19 @@ fn main() {
                 Ok(())
             }
 
-            fn rustfile_template() -> Vec<TokenStream> {
-                vec![quote!(
+            fn rustfile_template(trait_imports: &[&str]) -> Vec<TokenStream> {
+                let imports = if trait_imports.is_empty() {
+                    quote!()
+                } else {
+                    let idents = trait_imports.iter().map(|t| format_ident!("{}", t));
+                    quote!(use terrars:: {
+                        #(#idents as _,) *
+                    };)
+                };
+                return vec![quote!(
                     use serde::Serialize;
-                    use std::cell::RefCell;
-                    use std::rc::Rc;
-                    use terrars::*;
-                )]
+                    #imports
+                )];
             }
 
             // Provider type + provider
@@ -200,7 +208,6 @@ fn main() {
             let mut mod_out = vec![];
             let provider_ident: Ident;
             {
-                let mut out = rustfile_template();
                 let camel_name = to_camel(provider_name_parts);
                 let source = &config.provider;
                 let version = &config.version;
@@ -212,6 +219,11 @@ fn main() {
                     &provider_schema.provider.block.attributes,
                     true,
                 );
+                let mut out = rustfile_template(if raw_fields.extra_types.is_empty() {
+                    &[]
+                } else {
+                    &["Ref"]
+                });
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
                 let extra_types = raw_fields.extra_types;
@@ -226,9 +238,9 @@ fn main() {
                         #(#provider_fields,) *
                     }
                     struct #provider_inner_ident {
-                        data: RefCell < #provider_inner_mut_ident >,
+                        data: std:: cell:: RefCell < #provider_inner_mut_ident >,
                     }
-                    pub struct #provider_ident(Rc < #provider_inner_ident >);
+                    pub struct #provider_ident(std:: rc:: Rc < #provider_inner_ident >);
                     impl #provider_ident {
                         pub fn provider_ref(&self) -> String {
                             let data = self.0.data.borrow();
@@ -245,7 +257,7 @@ fn main() {
                         }
                         #(#provider_mut_methods) *
                     }
-                    impl Provider for #provider_inner_ident {
+                    impl terrars:: Provider for #provider_inner_ident {
                         fn extract_type_tf_id(&self) -> String {
                             #shortname.into()
                         }
@@ -263,9 +275,9 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #provider_builder_ident {
-                        pub fn build(self, stack:& mut Stack) -> #provider_ident {
-                            let out = #provider_ident(Rc:: new(#provider_inner_ident {
-                                data: RefCell:: new(#provider_inner_mut_ident {
+                        pub fn build(self, stack:& mut terrars:: Stack) -> #provider_ident {
+                            let out = #provider_ident(std:: rc:: Rc:: new(#provider_inner_ident {
+                                data: std:: cell:: RefCell:: new(#provider_inner_mut_ident {
                                     alias: None,
                                     #(#copy_builder_fields,) *
                                 }),
@@ -283,7 +295,7 @@ fn main() {
 
             // Resources
             for (resource_name, resource) in &provider_schema.resource_schemas {
-                let mut out = rustfile_template();
+                let mut out = rustfile_template(&["Referable", "Resource_", "Ref"]);
                 out.push(quote!(use super:: provider:: #provider_ident;));
                 let use_name_parts =
                     resource_name
@@ -323,21 +335,24 @@ fn main() {
                     #[derive(Serialize)] struct #resource_inner_mut_ident {
                         #[serde(skip_serializing_if = "Vec::is_empty")] depends_on: Vec < String >,
                         #[serde(skip_serializing_if = "Option::is_none")] provider: Option < String >,
-                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")] lifecycle: ResourceLifecycle,
+                        #[
+                            serde(skip_serializing_if = "terrars::SerdeSkipDefault::is_default")
+                        ] lifecycle: terrars:: ResourceLifecycle,
                         #[serde(skip_serializing_if = "Option::is_none")] for_each: Option < String >,
+                        #[serde(skip_serializing_if = "Vec::is_empty")] provisioner: Vec < terrars:: Provisioner >,
                         #(#resource_fields,) *
                     }
                     struct #resource_inner_ident {
-                        shared: StackShared,
+                        shared: terrars:: StackShared,
                         tf_id: String,
-                        data: RefCell < #resource_inner_mut_ident >,
+                        data: std:: cell:: RefCell < #resource_inner_mut_ident >,
                     }
-                    #[derive(Clone)] pub struct #resource_ident(Rc < #resource_inner_ident >);
+                    #[derive(Clone)] pub struct #resource_ident(std:: rc:: Rc < #resource_inner_ident >);
                     impl #resource_ident {
-                        fn shared(&self) -> &StackShared {
+                        fn shared(&self) -> &terrars::StackShared {
                             &self.0.shared
                         }
-                        pub fn depends_on(self, dep: &impl Referable) -> Self {
+                        pub fn depends_on(self, dep: &impl terrars::Referable) -> Self {
                             self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
                         }
@@ -355,7 +370,7 @@ fn main() {
                         }
                         pub fn ignore_changes_to_all(self) -> Self {
                             self.0.data.borrow_mut().lifecycle.ignore_changes =
-                                Some(IgnoreChanges::All(IgnoreChangesAll::All));
+                                Some(terrars::IgnoreChanges::All(terrars::IgnoreChangesAll::All));
                             self
                         }
                         pub fn ignore_changes_to_attr(self, attr: impl ToString) -> Self {
@@ -363,22 +378,23 @@ fn main() {
                                 let mut d = self.0.data.borrow_mut();
                                 if match &mut d.lifecycle.ignore_changes {
                                     Some(i) => match i {
-                                        IgnoreChanges::All(_) => {
+                                        terrars::IgnoreChanges::All(_) => {
                                             true
                                         },
-                                        IgnoreChanges::Refs(r) => {
+                                        terrars::IgnoreChanges::Refs(r) => {
                                             r.push(attr.to_string());
                                             false
                                         },
                                     },
                                     None => true,
                                 } {
-                                    d.lifecycle.ignore_changes = Some(IgnoreChanges::Refs(vec![attr.to_string()]));
+                                    d.lifecycle.ignore_changes =
+                                        Some(terrars::IgnoreChanges::Refs(vec![attr.to_string()]));
                                 }
                             }
                             self
                         }
-                        pub fn replace_triggered_by_resource(self, r: &impl Resource) -> Self {
+                        pub fn replace_triggered_by_resource(self, r: &impl terrars::Resource) -> Self {
                             self.0.data.borrow_mut().lifecycle.replace_triggered_by.push(r.extract_ref());
                             self
                         }
@@ -386,23 +402,29 @@ fn main() {
                             self.0.data.borrow_mut().lifecycle.replace_triggered_by.push(attr.to_string());
                             self
                         }
+                        /// Add a provisioner (ex: `local-exec`, `remote-exec`, `file`) to this resource.
+                        /// Provisioners run in the order they're added.
+                        pub fn add_provisioner(self, v: impl Into<terrars::Provisioner>) -> Self {
+                            self.0.data.borrow_mut().provisioner.push(v.into());
+                            self
+                        }
                         #(#resource_mut_methods) * #(#resource_ref_methods) *
                     }
-                    impl Referable for #resource_ident {
+                    impl terrars:: Referable for #resource_ident {
                         fn extract_ref(&self) -> String {
                             format!("{}.{}", self.0.extract_resource_type(), self.0.extract_tf_id())
                         }
                     }
-                    impl Resource for #resource_ident {
+                    impl terrars:: Resource for #resource_ident {
                     }
-                    impl ToListMappable for #resource_ident {
-                        type O = ListRef < #resource_ref_ident >;
+                    impl terrars:: ToListMappable for #resource_ident {
+                        type O = terrars:: ListRef < #resource_ref_ident >;
                         fn do_map(self, base: String) -> Self::O {
                             self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
-                            ListRef::new(self.0.shared.clone(), self.extract_ref())
+                            terrars::ListRef::new(self.0.shared.clone(), self.extract_ref())
                         }
                     }
-                    impl Resource_ for #resource_inner_ident {
+                    impl terrars:: Resource_ for #resource_inner_ident {
                         fn extract_resource_type(&self) -> String {
                             #resource_name.into()
                         }
@@ -418,15 +440,16 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #resource_builder_ident {
-                        pub fn build(self, stack:& mut Stack) -> #resource_ident {
-                            let out = #resource_ident(Rc:: new(#resource_inner_ident {
+                        pub fn build(self, stack:& mut terrars:: Stack) -> #resource_ident {
+                            let out = #resource_ident(std:: rc:: Rc:: new(#resource_inner_ident {
                                 shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
-                                data: RefCell:: new(#resource_inner_mut_ident {
+                                data: std:: cell:: RefCell:: new(#resource_inner_mut_ident {
                                     depends_on: core:: default:: Default:: default(),
                                     provider: None,
                                     lifecycle: core:: default:: Default:: default(),
                                     for_each: None,
+                                    provisioner: core:: default:: Default:: default(),
                                     #(#copy_builder_fields,) *
                                 }),
                             }));
@@ -435,11 +458,11 @@ fn main() {
                         }
                     }
                     pub struct #resource_ref_ident {
-                        shared: StackShared,
+                        shared: terrars:: StackShared,
                         base: String
                     }
-                    impl Ref for #resource_ref_ident {
-                        fn new(shared: StackShared, base: String) -> Self {
+                    impl terrars:: Ref for #resource_ref_ident {
+                        fn new(shared: terrars::StackShared, base: String) -> Self {
                             Self {
                                 shared: shared,
                                 base: base,
@@ -450,7 +473,7 @@ fn main() {
                         fn extract_ref(&self) -> String {
                             self.base.clone()
                         }
-                        fn shared(&self) -> &StackShared {
+                        fn shared(&self) -> &terrars::StackShared {
                             &self.shared
                         }
                         #(#resource_ref_methods) *
@@ -473,7 +496,7 @@ fn main() {
 
             // Data sources
             for (datasource_name, datasource) in &provider_schema.data_source_schemas {
-                let mut out = rustfile_template();
+                let mut out = rustfile_template(&["Referable", "Datasource_", "Ref"]);
                 out.push(quote!(use super:: provider:: #provider_ident;));
                 let use_name_parts =
                     ["data"]
@@ -513,21 +536,23 @@ fn main() {
                 out.push(quote!{
                     #[derive(Serialize)] struct #datasource_inner_mut_ident {
                         #[serde(skip_serializing_if = "Vec::is_empty")] depends_on: Vec < String >,
-                        #[serde(skip_serializing_if = "SerdeSkipDefault::is_default")] provider: Option < String >,
+                        #[
+                            serde(skip_serializing_if = "terrars::SerdeSkipDefault::is_default")
+                        ] provider: Option < String >,
                         #[serde(skip_serializing_if = "Option::is_none")] for_each: Option < String >,
                         #(#datasource_fields,) *
                     }
                     struct #datasource_inner_ident {
-                        shared: StackShared,
+                        shared: terrars:: StackShared,
                         tf_id: String,
-                        data: RefCell < #datasource_inner_mut_ident >,
+                        data: std:: cell:: RefCell < #datasource_inner_mut_ident >,
                     }
-                    #[derive(Clone)] pub struct #datasource_ident(Rc < #datasource_inner_ident >);
+                    #[derive(Clone)] pub struct #datasource_ident(std:: rc:: Rc < #datasource_inner_ident >);
                     impl #datasource_ident {
-                        fn shared(&self) -> &StackShared {
+                        fn shared(&self) -> &terrars::StackShared {
                             &self.0.shared
                         }
-                        pub fn depends_on(self, dep: &impl Referable) -> Self {
+                        pub fn depends_on(self, dep: &impl terrars::Referable) -> Self {
                             self.0.data.borrow_mut().depends_on.push(dep.extract_ref());
                             self
                         }
@@ -537,21 +562,21 @@ fn main() {
                         }
                         #(#datasource_mut_methods) * #(#datasource_ref_methods) *
                     }
-                    impl Referable for #datasource_ident {
+                    impl terrars:: Referable for #datasource_ident {
                         fn extract_ref(&self) -> String {
                             format!("data.{}.{}", self.0.extract_datasource_type(), self.0.extract_tf_id())
                         }
                     }
-                    impl Datasource for #datasource_ident {
+                    impl terrars:: Datasource for #datasource_ident {
                     }
-                    impl ToListMappable for #datasource_ident {
-                        type O = ListRef < #datasource_ref_ident >;
+                    impl terrars:: ToListMappable for #datasource_ident {
+                        type O = terrars:: ListRef < #datasource_ref_ident >;
                         fn do_map(self, base: String) -> Self::O {
                             self.0.data.borrow_mut().for_each = Some(format!("${{{}}}", base));
-                            ListRef::new(self.0.shared.clone(), self.extract_ref())
+                            terrars::ListRef::new(self.0.shared.clone(), self.extract_ref())
                         }
                     }
-                    impl Datasource_ for #datasource_inner_ident {
+                    impl terrars:: Datasource_ for #datasource_inner_ident {
                         fn extract_datasource_type(&self) -> String {
                             #datasource_name.into()
                         }
@@ -567,11 +592,11 @@ fn main() {
                         #(#builder_fields,) *
                     }
                     impl #datasource_builder_ident {
-                        pub fn build(self, stack:& mut Stack) -> #datasource_ident {
-                            let out = #datasource_ident(Rc:: new(#datasource_inner_ident {
+                        pub fn build(self, stack:& mut terrars:: Stack) -> #datasource_ident {
+                            let out = #datasource_ident(std:: rc:: Rc:: new(#datasource_inner_ident {
                                 shared: stack.shared.clone(),
                                 tf_id: self.tf_id,
-                                data: RefCell:: new(#datasource_inner_mut_ident {
+                                data: std:: cell:: RefCell:: new(#datasource_inner_mut_ident {
                                     depends_on: core:: default:: Default:: default(),
                                     provider: None,
                                     for_each: None,
@@ -583,11 +608,11 @@ fn main() {
                         }
                     }
                     pub struct #datasource_ref_ident {
-                        shared: StackShared,
+                        shared: terrars:: StackShared,
                         base: String
                     }
-                    impl Ref for #datasource_ref_ident {
-                        fn new(shared: StackShared, base: String) -> Self {
+                    impl terrars:: Ref for #datasource_ref_ident {
+                        fn new(shared: terrars::StackShared, base: String) -> Self {
                             Self {
                                 shared: shared,
                                 base: base,
@@ -595,7 +620,7 @@ fn main() {
                         }
                     }
                     impl #datasource_ref_ident {
-                        fn shared(&self) -> &StackShared {
+                        fn shared(&self) -> &terrars::StackShared {
                             &self.shared
                         }
                         fn extract_ref(&self) -> String {
