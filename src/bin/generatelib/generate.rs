@@ -24,7 +24,7 @@ pub fn generate_simple_type(t: &ScalarTypeKey) -> (TokenStream, Option<(TokenStr
     let raw = match t {
         ScalarTypeKey::Number => quote!(f64),
         ScalarTypeKey::Integer => quote!(i64),
-        ScalarTypeKey::String => quote!(String),
+        ScalarTypeKey::String => quote!(std::string::String),
         ScalarTypeKey::Bool => quote!(bool),
     };
     (
@@ -135,7 +135,7 @@ impl TopLevelFields {
                 dynamic: #dynamic_ident
             });
             self.copy_builder_fields.push(quote!{
-                dynamic: Default::default()
+                dynamic: core::default::Default::default()
             });
         };
     }
@@ -174,8 +174,8 @@ pub fn generate_field(
                     .push(
                         quote!(
                             #[
-                                serde(rename = #k, skip_serializing_if = "Option::is_none")
-                            ] #field_name: Option < #rust_field_type >
+                                serde(rename = #k, skip_serializing_if = "std::option::Option::is_none")
+                            ] #field_name: std::option::Option < #rust_field_type >
                         ),
                     );
             } else {
@@ -183,7 +183,7 @@ pub fn generate_field(
                     .fields
                     .push(
                         quote!(
-                            #[serde(skip_serializing_if = "Option::is_none")] #field_name: Option < #rust_field_type >
+                            #[serde(skip_serializing_if = "std::option::Option::is_none")] #field_name: std::option::Option < #rust_field_type >
                         ),
                     );
             }
@@ -197,7 +197,7 @@ pub fn generate_field(
                 access_mut_self = quote!(self);
             }
             if let Some(block_type) = block {
-                out.dynamic_block_fields.push(quote!(#field_name: Option < terrars:: DynamicBlock < #block_type >>));
+                out.dynamic_block_fields.push(quote!(#field_name: std::option::Option < terrars:: DynamicBlock < #block_type >>));
                 out
                     .mut_methods
                     .push(
@@ -206,14 +206,14 @@ pub fn generate_field(
                                 doc = #set_doc
                             ] pub fn #set_field_name(
                                 #pat_mut_self,
-                                v: impl Into < terrars:: BlockAssignable < #block_type >>
+                                v: impl std::convert::Into < terrars:: BlockAssignable < #block_type >>
                             ) -> Self {
                                 match v.into() {
                                     terrars:: BlockAssignable:: Literal(v) => {
-                                        #access_mut_self.#field_name = Some(v);
+                                        #access_mut_self.#field_name = std::option::Option::Some(v);
                                     },
                                     terrars:: BlockAssignable:: Dynamic(d) => {
-                                        #access_mut_self.dynamic.#field_name = Some(d);
+                                        #access_mut_self.dynamic.#field_name = std::option::Option::Some(d);
                                     }
                                 }
                                 self
@@ -227,8 +227,8 @@ pub fn generate_field(
                         quote!(
                             #[
                                 doc = #set_doc
-                            ] pub fn #set_field_name(#pat_mut_self, v: impl Into < #rust_field_type >) -> Self {
-                                #access_mut_self.#field_name = Some(v.into());
+                            ] pub fn #set_field_name(#pat_mut_self, v: impl std::convert::Into < #rust_field_type >) -> Self {
+                                #access_mut_self.#field_name = std::option::Option::Some(v.into());
                                 self
                             }
                         ),
@@ -267,7 +267,7 @@ fn generate_type(
                 let (element_type, element_ref_type) =
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
-                    quote!(Vec < #element_type >),
+                    quote!(std::vec::Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(terrars:: ListRef), quote!(terrars:: ListRef < #r2 >))),
                 )
             },
@@ -275,7 +275,7 @@ fn generate_type(
                 let (element_type, element_ref_type) =
                     generate_agg_type_obj_nested(extra_types, &add_path(&path, "el"), &x.attributes);
                 (
-                    quote!(Vec < #element_type >),
+                    quote!(std::vec::Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(terrars:: SetRef), quote!(terrars:: SetRef < #r2 >))),
                 )
             },
@@ -384,13 +384,13 @@ pub fn generate_block_fields(
             NestingMode::List => {
                 let (element_type, element_ref_type) =
                     generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                rust_type = quote!(Vec < #element_type >);
+                rust_type = quote!(std::vec::Vec < #element_type >);
                 rust_ref_type = Some((quote!(terrars:: ListRef), quote!(terrars:: ListRef < #element_ref_type >)));
                 block_type = Some(element_type);
             },
             NestingMode::Set => {
                 let (element_type, _) = generate_block_agg_obj(out, &add_path(&path, "el"), &v.block);
-                rust_type = quote!(Vec < #element_type >);
+                rust_type = quote!(std::vec::Vec < #element_type >);
                 rust_ref_type = None;
                 block_type = Some(element_type);
             },
@@ -487,7 +487,7 @@ pub fn generate_nonident_rust_type(
         }
         impl terrars::ToListMappable for #obj_ident {
             type O = terrars::BlockAssignable < #obj_ident >;
-            fn do_map(self, base: String) -> Self::O {
+            fn do_map(self, base: std::string::String) -> Self::O {
                 terrars::BlockAssignable::Dynamic(terrars::DynamicBlock {
                     for_each: format!("${{{}}}", base),
                     iterator: "each".into(),
@@ -507,10 +507,10 @@ pub fn generate_nonident_rust_type(
         }
         pub struct #obj_ref_ident {
             shared: terrars::StackShared,
-            base: String
+            base: std::string::String
         }
         impl terrars::Ref for #obj_ref_ident {
-            fn new(shared: terrars::StackShared, base: String) -> #obj_ref_ident {
+            fn new(shared: terrars::StackShared, base: std::string::String) -> #obj_ref_ident {
                 #obj_ref_ident {
                     shared: shared,
                     base: base.to_string(),
