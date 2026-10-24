@@ -56,6 +56,9 @@ pub mod set_ref;
 pub mod variable;
 pub mod helpers;
 pub mod provisioner;
+pub mod backend;
+#[cfg(feature = "opentofu")]
+pub mod encryption;
 
 pub use ref_::*;
 pub use expr::*;
@@ -73,6 +76,9 @@ use utils::REPLACE_EXPRS;
 pub use variable::*;
 pub use helpers::*;
 pub use provisioner::*;
+pub use backend::*;
+#[cfg(feature = "opentofu")]
+pub use encryption::*;
 
 /// Use this to create a new stack.
 pub struct BuildStack {}
@@ -85,9 +91,19 @@ impl BuildStack {
             datasources: Default::default(),
             resources: Default::default(),
             outputs: Default::default(),
+            removed: Default::default(),
+            state: None,
+            command: "terraform".into(),
+            #[cfg(feature = "opentofu")]
+            encryption: None,
             shared: StackShared(Rc::new(RefCell::new(StackShared_ { replace_exprs: Default::default() }))),
         };
     }
+}
+
+enum StateConfig {
+    Backend(Backend),
+    Cloud(Cloud),
 }
 
 #[derive(Debug)]
@@ -151,6 +167,11 @@ pub struct Stack {
     datasources: Vec<Rc<dyn Datasource_>>,
     resources: Vec<Rc<dyn Resource_>>,
     outputs: Vec<Rc<dyn Output>>,
+    removed: Vec<Removed>,
+    state: Option<StateConfig>,
+    command: String,
+    #[cfg(feature = "opentofu")]
+    encryption: Option<encryption::Encryption>,
     pub shared: StackShared,
 }
 
@@ -230,14 +251,31 @@ impl Stack {
             }
         }
         let mut out = BTreeMap::new();
-        out.insert("terraform", json!({
-            "backend": {
-                "local": {
-                    "path": state_path.to_string_lossy(),
-                },
+        let mut terraform = serde_json::Map::new();
+        match &self.state {
+            None => {
+                terraform.insert("backend".into(), json!({
+                    "local": {
+                        "path": state_path.to_string_lossy(),
+                    },
+                }));
             },
-            "required_providers": required_providers,
-        }));
+            Some(StateConfig::Backend(b)) => {
+                terraform.insert("backend".into(), serde_json::to_value(b).unwrap());
+            },
+            Some(StateConfig::Cloud(c)) => {
+                terraform.insert("cloud".into(), serde_json::to_value(c).unwrap());
+            },
+        }
+        terraform.insert("required_providers".into(), serde_json::to_value(&required_providers).unwrap());
+        #[cfg(feature = "opentofu")]
+        if let Some(encryption) = &self.encryption {
+            terraform.insert("encryption".into(), serde_json::to_value(encryption).unwrap());
+        }
+        out.insert("terraform", Value::Object(terraform));
+        if !self.removed.is_empty() {
+            out.insert("removed", serde_json::to_value(&self.removed).unwrap());
+        }
         if !providers.is_empty() {
             out.insert("provider", json!(providers));
         }
@@ -256,6 +294,35 @@ impl Stack {
         REPLACE_EXPRS.with(|f| *f.borrow_mut() = None);
         let res = serde_json::to_vec_pretty(&out).unwrap();
         Ok(res)
+    }
+
+    pub fn set_command(&mut self, command: impl Into<String>) -> &mut Self {
+        self.command = command.into();
+        self
+    }
+
+    pub fn set_backend(&mut self, backend: impl Into<Backend>) -> &mut Self {
+        self.state = Some(StateConfig::Backend(backend.into()));
+        self
+    }
+
+    pub fn set_cloud(&mut self, cloud: Cloud) -> &mut Self {
+        self.state = Some(StateConfig::Cloud(cloud));
+        self
+    }
+
+    #[cfg(feature = "opentofu")]
+    pub fn set_encryption(&mut self, encryption: encryption::Encryption) -> &mut Self {
+        self.encryption = Some(encryption);
+        self
+    }
+
+    pub fn add_removed(&mut self, from: impl Into<String>, destroy: bool) -> &mut Self {
+        self.removed.push(Removed {
+            from: from.into(),
+            lifecycle: RemovedLifecycle { destroy },
+        });
+        self
     }
 
     pub fn add_provider(&mut self, v: Rc<dyn Provider>) {
@@ -279,14 +346,14 @@ impl Stack {
         fs::write(&path.join("stack.tf.json"), &self.serialize(&PathBuf::from_str(state_name).unwrap())?)?;
         let state_path = path.join(state_name);
         if !state_path.exists() {
-            let mut command = Command::new("terraform");
+            let mut command = Command::new(&self.command);
             command.current_dir(&path).arg("init");
             let res = command.status()?;
             if !res.success() {
                 return Err(RunError::CommandError(command, res));
             }
         }
-        let mut command = Command::new("terraform");
+        let mut command = Command::new(&self.command);
         command.current_dir(&path).arg(mode);
         if let Some(vars) = variables {
             let mut vars_file = tempfile::Builder::new().suffix(".json").tempfile()?;
@@ -309,7 +376,7 @@ impl Stack {
     /// which the .tf.json file was written. The output struct must be a single level
     /// and only have primitive values (i64, f64, String, bool).
     pub fn get_output<O: DeserializeOwned>(&self, path: &Path) -> Result<O, RunError> {
-        let mut command = Command::new("terraform");
+        let mut command = Command::new(&self.command);
         let res = command.current_dir(&path).stderr(Stdio::inherit()).args(&["output", "-json"]).output()?;
         if !res.status.success() {
             return Err(RunError::CommandError(command, res.status));
@@ -382,6 +449,35 @@ pub struct ResourceLifecycle {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_changes: Option<IgnoreChanges>,
     pub replace_triggered_by: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub precondition: Vec<LifecycleCondition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub postcondition: Vec<LifecycleCondition>,
+}
+
+#[derive(Serialize, PartialEq)]
+pub struct LifecycleCondition {
+    pub condition: PrimField<bool>,
+    pub error_message: PrimField<String>,
+}
+
+#[derive(Serialize, Default, PartialEq)]
+pub struct DatasourceLifecycle {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub precondition: Vec<LifecycleCondition>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub postcondition: Vec<LifecycleCondition>,
+}
+
+#[derive(Serialize)]
+pub struct Removed {
+    from: String,
+    lifecycle: RemovedLifecycle,
+}
+
+#[derive(Serialize)]
+struct RemovedLifecycle {
+    destroy: bool,
 }
 
 #[derive(Serialize)]

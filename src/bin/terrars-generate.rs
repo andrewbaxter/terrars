@@ -82,6 +82,7 @@ fn main() {
             exclude: Option<Vec<String>>,
             dest: PathBuf,
             feature_gate: Option<PathBuf>,
+            binary: Option<String>,
         }
 
         #[derive(Aargvark)]
@@ -120,13 +121,14 @@ fn main() {
                     }
                 }
             })).unwrap()).context("Failed to write bootstrap terraform code for provider schema extraction")?;
-            Command::new("terraform")
+            let binary = config.binary.as_deref().unwrap_or("terraform");
+            Command::new(binary)
                 .args(&["init", "-no-color"])
                 .current_dir(&dir)
                 .run()
                 .context("Error initializing terraform in export dir")?;
             let schema_raw =
-                Command::new("terraform")
+                Command::new(binary)
                     .args(&["providers", "schema", "-json", "-no-color"])
                     .current_dir(&dir)
                     .output()
@@ -408,6 +410,28 @@ fn main() {
                             self.0.data.borrow_mut().provisioner.push(v.into());
                             self
                         }
+                        pub fn add_lifecycle_precondition(
+                            self,
+                            condition: impl Into<terrars::PrimField<bool>>,
+                            error_message: impl Into<terrars::PrimField<String>>,
+                        ) -> Self {
+                            self.0.data.borrow_mut().lifecycle.precondition.push(terrars::LifecycleCondition {
+                                condition: condition.into(),
+                                error_message: error_message.into(),
+                            });
+                            self
+                        }
+                        pub fn add_lifecycle_postcondition(
+                            self,
+                            condition: impl Into<terrars::PrimField<bool>>,
+                            error_message: impl Into<terrars::PrimField<String>>,
+                        ) -> Self {
+                            self.0.data.borrow_mut().lifecycle.postcondition.push(terrars::LifecycleCondition {
+                                condition: condition.into(),
+                                error_message: error_message.into(),
+                            });
+                            self
+                        }
                         #(#resource_mut_methods) * #(#resource_ref_methods) *
                     }
                     impl terrars:: Referable for #resource_ident {
@@ -539,6 +563,9 @@ fn main() {
                         #[
                             serde(skip_serializing_if = "terrars::SerdeSkipDefault::is_default")
                         ] provider: Option < String >,
+                        #[
+                            serde(skip_serializing_if = "terrars::SerdeSkipDefault::is_default")
+                        ] lifecycle: terrars:: DatasourceLifecycle,
                         #[serde(skip_serializing_if = "Option::is_none")] for_each: Option < String >,
                         #(#datasource_fields,) *
                     }
@@ -558,6 +585,28 @@ fn main() {
                         }
                         pub fn set_provider(&self, provider:& #provider_ident) ->& Self {
                             self.0.data.borrow_mut().provider = Some(provider.provider_ref());
+                            self
+                        }
+                        pub fn add_lifecycle_precondition(
+                            self,
+                            condition: impl Into<terrars::PrimField<bool>>,
+                            error_message: impl Into<terrars::PrimField<String>>,
+                        ) -> Self {
+                            self.0.data.borrow_mut().lifecycle.precondition.push(terrars::LifecycleCondition {
+                                condition: condition.into(),
+                                error_message: error_message.into(),
+                            });
+                            self
+                        }
+                        pub fn add_lifecycle_postcondition(
+                            self,
+                            condition: impl Into<terrars::PrimField<bool>>,
+                            error_message: impl Into<terrars::PrimField<String>>,
+                        ) -> Self {
+                            self.0.data.borrow_mut().lifecycle.postcondition.push(terrars::LifecycleCondition {
+                                condition: condition.into(),
+                                error_message: error_message.into(),
+                            });
                             self
                         }
                         #(#datasource_mut_methods) * #(#datasource_ref_methods) *
@@ -599,6 +648,7 @@ fn main() {
                                 data: std:: cell:: RefCell:: new(#datasource_inner_mut_ident {
                                     depends_on: core:: default:: Default:: default(),
                                     provider: None,
+                                    lifecycle: core:: default:: Default:: default(),
                                     for_each: None,
                                     #(#copy_builder_fields,) *
                                 }),

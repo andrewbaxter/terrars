@@ -23,6 +23,10 @@ tempfile = "3"
 thiserror = "1"
 toml = "0.8"
 
+[features]
+# Enables OpenTofu-only constructs in generated stacks.
+opentofu = []
+
 [workspace]
 members = ["helloworld"]
 

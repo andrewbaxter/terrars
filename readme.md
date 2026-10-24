@@ -1,4 +1,4 @@
-Terrars is a tool for building Terraform stacks in Rust. This is an alternative to the [CDK](https://developer.hashicorp.com/terraform/cdktf).
+Terrars is a tool for building OpenTofu/Terraform stacks in Rust. This is an alternative to the (now very dead) [CDK](https://developer.hashicorp.com/terraform/cdktf).
 
 **See a working example** in [helloworld](helloworld).
 
@@ -9,6 +9,11 @@ Why use this or the CDK instead of raw Terraform?
 - All stacks eventually get complicated to the point you need a full programming language to generate them. CDK and this aren't particularly more verbose than raw Terraform, so I'd always use them from the start.
 - Reuse constants and datastructures from your code (json structures, environment variables, endpoints and reverse routing functions) when defining your infrastructure
 - Autocompletion, edit-time verification via types
+- Modules are a way of emulating functions, but they ultimately fail and lead to workarounds:
+  - Moving resources in and out of a function requires `move` blocks because the ids change, which is tricky to get right
+  - Most languages have "captures", modules don't. Let's say you want to have a "route" function that creates a route for a gateway - in HCL you need to pass the gateway in to each module invocation. With a real language you can capture the gateway, and the function can just take the parameters you want.
+  - Most critically, you can't actually write code in terraform. Stuff like transforming YAML from an upstream dependency to generate resources. If you try to hack around it with null resource provisioners, you'll still hit walls - dynamic outputs can't produce plural resources, which is another large limiation. No such limitations in CDKs.
+  - You need to manage extra sets of deps and keep the versions up to date.
 
 Why use this instead of the CDK?
 
@@ -87,9 +92,9 @@ Why _not_ use this instead of the CDK?
    fs::write("mystack.tf.json", &stack.serialize("state.json")?)?;
    ```
 
-3. Call `terraform` as usual in the directory you generated `mystack.tf.json` in
+3. Call `tofu` or `terraform` as usual in the directory you generated `mystack.tf.json` in
 
-   (`Stack` also has methods `run()` and `get_output()` to call `terraform` for you. You must have `terraform` in your path.)
+   (`Stack` also has methods `run()` and `get_output()` to call `tofu` or `terraform` for you. You must have `terraform` in your path.)
 
 # Generating bindings
 
@@ -192,10 +197,6 @@ This way, all normal string formatting methods should retain the expected expres
 - No variable or output static type checking
 
   I'd like to add a derive macro for generating variables/outputs automatically from a structure at some point.
-
-- Non-local deployment methods
-
-  I think this is easy, but I haven't looked into it yet.
 
 # The name
 
