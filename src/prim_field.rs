@@ -93,6 +93,37 @@ impl TfPrimitiveType for f64 {
     }
 }
 
+impl TfPrimitiveType for serde_json::Value {
+    fn extract_variable_type() -> String {
+        "any".into()
+    }
+
+    fn to_expr_raw(&self) -> String {
+        return serde_json::to_string(self).unwrap().replace("%{", "%%{").replace("${", "$${");
+    }
+
+    fn serialize2<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        struct Escaped<'a>(&'a serde_json::Value);
+
+        impl<'a> Serialize for Escaped<'a> {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer {
+                match self.0 {
+                    serde_json::Value::String(s) => s.serialize2(serializer),
+                    serde_json::Value::Array(a) => serializer.collect_seq(a.iter().map(Escaped)),
+                    serde_json::Value::Object(o) => serializer.collect_map(o.iter().map(|(k, v)| (k, Escaped(v)))),
+                    v => v.serialize(serializer),
+                }
+            }
+        }
+
+        Escaped(self).serialize(serializer)
+    }
+}
+
 /// Helper trait representing core interchange values: `f64`, `i64`, `String`,
 /// `bool`.
 pub trait PrimType: Serialize + Clone + TfPrimitiveType + Default + PartialEq { }

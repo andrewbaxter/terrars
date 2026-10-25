@@ -143,35 +143,57 @@ fn main() {
             // Generate
             fn write_file(path: &Path, contents: Vec<TokenStream>) -> Result<(), loga::Error> {
                 es!({
-                    File::create(&path)
-                        .context("Failed to create rust file")?
-                        .write_all(
+                    let file = syn::parse2::<syn::File>(quote!(#(#contents) *)).context_with(
+                        "Failed to parse generated code AST for formatting",
+                        ea!(
+                            context =
+                                contents
+                                    .iter()
+                                    .map(|s| s.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join("\n")
+                                    .lines()
+                                    .enumerate()
+                                    .map(|(ln, l)| format!("{:0>4} {}", ln + 1, l))
+                                    .collect::<Vec<String>>()
+                                    .join("\n")
+                        ),
+                    )?;
+
+                    let mut chunks = vec![syn::File {
+                        shebang: None,
+                        attrs: file.attrs,
+                        items: vec![],
+                    }];
+                    for item in file.items {
+                        if chunks.len() == 1 && matches!(item, syn::Item::Use(_)) {
+                            chunks[0].items.push(item);
+                        } else {
+                            chunks.push(syn::File {
+                                shebang: None,
+                                attrs: vec![],
+                                items: vec![item],
+                            });
+                        }
+                    }
+                    let mut rendered = vec![];
+                    for chunk in chunks {
+                        let mut text =
                             genemichaels_lib::format_ast(
-                                syn::parse2::<syn::File>(
-                                    quote!(#(#contents) *),
-                                ).context_with(
-                                    "Failed to parse generated code AST for formatting",
-                                    ea!(
-                                        context =
-                                            contents
-                                                .iter()
-                                                .map(|s| s.to_string())
-                                                .collect::<Vec<String>>()
-                                                .join("\n")
-                                                .lines()
-                                                .enumerate()
-                                                .map(|(ln, l)| format!("{:0>4} {}", ln + 1, l))
-                                                .collect::<Vec<String>>()
-                                                .join("\n")
-                                    ),
-                                )?,
+                                chunk,
                                 &genemichaels_lib::FormatConfig::default(),
                                 Default::default(),
                             )
                                 .map_err(|e| loga::err_with("Error formatting generated code", ea!(err = e)))?
-                                .rendered
-                                .as_bytes(),
-                        )
+                                .rendered;
+                        if !text.ends_with("\n") {
+                            text.push('\n');
+                        }
+                        rendered.push(text);
+                    }
+                    File::create(&path)
+                        .context("Failed to create rust file")?
+                        .write_all(rendered.join("\n").as_bytes())
                         .context("Failed to write rust file")?;
                     Ok(())
                 }).context_with("Failed to write generate code", ea!(path = path.to_string_lossy()))?;
@@ -188,6 +210,7 @@ fn main() {
                     };)
                 };
                 return vec![quote!(
+                    #![allow(non_camel_case_types)]
                     use serde::Serialize;
                     #imports
                 )];
@@ -213,11 +236,11 @@ fn main() {
                 let camel_name = to_camel(provider_name_parts);
                 let source = &config.provider;
                 let version = &config.version;
-                let provider_inner_mut_ident = format_ident!("Provider{}Data", camel_name);
+                let provider_inner_mut_ident = format_ident!("Provider{}Data_", camel_name);
                 let mut raw_fields = TopLevelFields::default();
                 generate_fields_from_value_map(
                     &mut raw_fields,
-                    &provider_name_parts,
+                    &vec![format!("provider_{}", to_snake(provider_name_parts))],
                     &provider_schema.provider.block.attributes,
                     true,
                 );
@@ -319,8 +342,9 @@ fn main() {
                 println!("Generating {}", nice_resource_name);
                 let camel_name = to_camel(&use_name_parts);
                 let mut raw_fields = TopLevelFields::default();
-                generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &resource.block.attributes, true);
-                generate_block_fields(&mut raw_fields, &use_name_parts, &resource.block.block_types, true);
+                let path = vec![nice_resource_name.clone()];
+                generate_fields_from_value_map(&mut raw_fields, &path, &resource.block.attributes, true);
+                generate_block_fields(&mut raw_fields, &path, &resource.block.block_types, true);
                 raw_fields.finish(&camel_name);
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -330,7 +354,7 @@ fn main() {
                 let resource_ref_methods = raw_fields.ref_methods;
                 let resource_ident = format_ident!("{}", camel_name);
                 let resource_inner_ident = format_ident!("{}_", camel_name);
-                let resource_inner_mut_ident = format_ident!("{}Data", camel_name);
+                let resource_inner_mut_ident = format_ident!("{}Data_", camel_name);
                 let resource_builder_ident = format_ident!("Build{}", camel_name);
                 let resource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{
@@ -543,8 +567,9 @@ fn main() {
                 println!("Generating datasource {}", datasource_name);
                 let camel_name = to_camel(&use_name_parts);
                 let mut raw_fields = TopLevelFields::default();
-                generate_fields_from_value_map(&mut raw_fields, &use_name_parts, &datasource.block.attributes, true);
-                generate_block_fields(&mut raw_fields, &use_name_parts, &datasource.block.block_types, true);
+                let path = vec![nice_datasource_name.clone()];
+                generate_fields_from_value_map(&mut raw_fields, &path, &datasource.block.attributes, true);
+                generate_block_fields(&mut raw_fields, &path, &datasource.block.block_types, true);
                 raw_fields.finish(&camel_name);
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -554,7 +579,7 @@ fn main() {
                 let datasource_ref_methods = raw_fields.ref_methods;
                 let datasource_ident = format_ident!("{}", camel_name);
                 let datasource_inner_ident = format_ident!("{}_", camel_name);
-                let datasource_inner_mut_ident = format_ident!("{}Data", camel_name);
+                let datasource_inner_mut_ident = format_ident!("{}Data_", camel_name);
                 let datasource_builder_ident = format_ident!("Build{}", camel_name);
                 let datasource_ref_ident = format_ident!("{}Ref", camel_name);
                 out.push(quote!{

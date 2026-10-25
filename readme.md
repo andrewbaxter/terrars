@@ -64,7 +64,7 @@ Why _not_ use this instead of the CDK?
 
    Create a `Stack` and set up providers:
 
-   ```rust
+   ```rust,ignore
    let mut stack = &mut BuildStack{}.build();
    BuildProviderStripe {
        token: STRIPE_TOKEN,
@@ -75,7 +75,7 @@ Why _not_ use this instead of the CDK?
 
    Then create resources:
 
-   ```rust
+   ```rust,ignore
    let my_product = BuildProduct {
        name: "My Product".into(),
    }.build(stack);
@@ -88,7 +88,7 @@ Why _not_ use this instead of the CDK?
 
    Finally, write the stack out:
 
-   ```rust
+   ```rust,ignore
    fs::write("mystack.tf.json", &stack.serialize("state.json")?)?;
    ```
 
@@ -129,7 +129,7 @@ While there are premade crates for some providers, you can generate code for new
 
 4. The first time you do this, create a `src/bin/mydeploy/tfschema/mod.rs` file with this contents to root the generated provider:
 
-   ```
+   ```rust,ignore
    pub mod aws;
    ```
 
@@ -178,7 +178,7 @@ Terraform provides a method to output provider schemas as json. This tool uses t
 
 Take as an example:
 
-```rust
+```rust,ignore
 format!("{}{}", my_expr, verbatim_string))
 ```
 

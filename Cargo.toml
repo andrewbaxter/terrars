@@ -29,6 +29,7 @@ opentofu = []
 
 [workspace]
 members = ["helloworld"]
+exclude = ["downstream"]
 
 [lints.clippy]
 all = "allow"

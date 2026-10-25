@@ -41,6 +41,7 @@ pub enum ScalarTypeKey {
     Integer,
     String,
     Bool,
+    Dynamic,
 }
 
 #[derive(Deserialize)]
@@ -119,6 +120,7 @@ impl Value {
 #[derive(Deserialize)]
 pub struct ValueSchemaNested {
     pub nesting_mode: NestingMode,
+    #[serde(default)]
     pub attributes: BTreeMap<String, Value>,
 }
 
@@ -136,4 +138,6 @@ pub enum NestingMode {
     List,
     Set,
     Single,
+    Group,
+    Map,
 }
