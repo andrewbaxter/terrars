@@ -8,6 +8,7 @@ use {
     },
     crate::generatelib::{
         generate::{
+            NestedTypes,
             TopLevelFields,
             generate_block_fields,
             generate_fields_from_value_map,
@@ -237,27 +238,28 @@ fn main() {
                 let source = &config.provider;
                 let version = &config.version;
                 let provider_inner_mut_ident = format_ident!("Provider{}Data_", camel_name);
+                let mut types = NestedTypes::default();
                 let mut raw_fields = TopLevelFields::default();
                 generate_fields_from_value_map(
+                    &mut types,
                     &mut raw_fields,
                     &vec![format!("provider_{}", to_snake(provider_name_parts))],
                     &provider_schema.provider.block.attributes,
                     true,
                 );
-                let mut out = rustfile_template(if raw_fields.extra_types.is_empty() {
+                let mut out = rustfile_template(if types.is_empty() {
                     &[]
                 } else {
                     &["Ref"]
                 });
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
-                let extra_types = raw_fields.extra_types;
                 let provider_fields = raw_fields.fields;
                 let provider_mut_methods = raw_fields.mut_methods;
                 provider_ident = format_ident!("Provider{}", camel_name);
                 let provider_inner_ident = format_ident!("Provider{}_", camel_name);
                 let provider_builder_ident = format_ident!("BuildProvider{}", camel_name);
-                out.push(quote!{
+                out.push(types.resolve(quote!{
                     #[derive(Serialize)] struct #provider_inner_mut_ident {
                         #[serde(skip_serializing_if = "std::option::Option::is_none")] alias: std::option::Option < std::string::String >,
                         #(#provider_fields,) *
@@ -311,8 +313,8 @@ fn main() {
                             out
                         }
                     }
-                    #(#extra_types) *
-                });
+                }));
+                out.extend(types.finish());
                 write_file(&provider_dir.join("provider.rs"), out)?;
                 let path_ident = format_ident!("provider");
                 mod_out.push(quote!(pub mod #path_ident; pub use #path_ident::*;));
@@ -341,10 +343,11 @@ fn main() {
                 }
                 println!("Generating {}", nice_resource_name);
                 let camel_name = to_camel(&use_name_parts);
+                let mut types = NestedTypes::default();
                 let mut raw_fields = TopLevelFields::default();
                 let path = vec![nice_resource_name.clone()];
-                generate_fields_from_value_map(&mut raw_fields, &path, &resource.block.attributes, true);
-                generate_block_fields(&mut raw_fields, &path, &resource.block.block_types, true);
+                generate_fields_from_value_map(&mut types, &mut raw_fields, &path, &resource.block.attributes, true);
+                generate_block_fields(&mut types, &mut raw_fields, &path, &resource.block.block_types, true);
                 raw_fields.finish(&camel_name);
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -357,7 +360,7 @@ fn main() {
                 let resource_inner_mut_ident = format_ident!("{}Data_", camel_name);
                 let resource_builder_ident = format_ident!("Build{}", camel_name);
                 let resource_ref_ident = format_ident!("{}Ref", camel_name);
-                out.push(quote!{
+                out.push(types.resolve(quote!{
                     #[derive(Serialize)] struct #resource_inner_mut_ident {
                         #[serde(skip_serializing_if = "std::vec::Vec::is_empty")] depends_on: std::vec::Vec < std::string::String >,
                         #[serde(skip_serializing_if = "std::option::Option::is_none")] provider: std::option::Option < std::string::String >,
@@ -527,7 +530,8 @@ fn main() {
                         #(#resource_ref_methods) *
                     }
                     #(#extra_types) *
-                });
+                }));
+                out.extend(types.finish());
                 write_file(&provider_dir.join(format!("{}.rs", nice_resource_name)), out)?;
                 let path_ident = format_ident!("{}", nice_resource_name);
                 let feature_gate = if config.feature_gate.is_some() {
@@ -564,12 +568,16 @@ fn main() {
                 if whitelist && !include.remove(&nice_datasource_name) {
                     continue;
                 }
+                if exclude.remove(&nice_datasource_name) {
+                    continue;
+                }
                 println!("Generating datasource {}", datasource_name);
                 let camel_name = to_camel(&use_name_parts);
+                let mut types = NestedTypes::default();
                 let mut raw_fields = TopLevelFields::default();
                 let path = vec![nice_datasource_name.clone()];
-                generate_fields_from_value_map(&mut raw_fields, &path, &datasource.block.attributes, true);
-                generate_block_fields(&mut raw_fields, &path, &datasource.block.block_types, true);
+                generate_fields_from_value_map(&mut types, &mut raw_fields, &path, &datasource.block.attributes, true);
+                generate_block_fields(&mut types, &mut raw_fields, &path, &datasource.block.block_types, true);
                 raw_fields.finish(&camel_name);
                 let builder_fields = raw_fields.builder_fields;
                 let copy_builder_fields = raw_fields.copy_builder_fields;
@@ -582,7 +590,7 @@ fn main() {
                 let datasource_inner_mut_ident = format_ident!("{}Data_", camel_name);
                 let datasource_builder_ident = format_ident!("Build{}", camel_name);
                 let datasource_ref_ident = format_ident!("{}Ref", camel_name);
-                out.push(quote!{
+                out.push(types.resolve(quote!{
                     #[derive(Serialize)] struct #datasource_inner_mut_ident {
                         #[serde(skip_serializing_if = "std::vec::Vec::is_empty")] depends_on: std::vec::Vec < std::string::String >,
                         #[
@@ -704,7 +712,8 @@ fn main() {
                         #(#datasource_ref_methods) *
                     }
                     #(#extra_types) *
-                });
+                }));
+                out.extend(types.finish());
                 write_file(&provider_dir.join(format!("{}.rs", nice_datasource_name)), out)?;
                 let path_ident = format_ident!("{}", nice_datasource_name);
                 let feature_gate = if config.feature_gate.is_some() {

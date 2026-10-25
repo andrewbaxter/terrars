@@ -1,6 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{
+    BTreeMap,
+    HashMap,
+    hash_map::Entry,
+};
 use proc_macro2::{
+    Group,
+    Ident,
     TokenStream,
+    TokenTree,
 };
 use quote::{
     format_ident,
@@ -110,7 +117,7 @@ pub fn sanitize(v: &str) -> (bool, String) {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct TopLevelFields {
     pub extra_types: Vec<TokenStream>,
     pub fields: Vec<TokenStream>,
@@ -255,18 +262,18 @@ pub fn generate_field(
 }
 
 fn generate_type(
-    extra_types: &mut Vec<TokenStream>,
+    types: &mut NestedTypes,
     path: &Vec<String>,
     at: (Option<&ValueSchema>, Option<&ValueSchemaNested>),
 ) -> (TokenStream, Option<(TokenStream, TokenStream)>) {
     match at {
         (Some(ValueSchema::Simple(t)), None) => generate_simple_type(t),
-        (Some(ValueSchema::AggColl(at)), None) => generate_agg_type_coll(extra_types, path, at.as_ref()),
-        (Some(ValueSchema::AggObj(at)), None) => generate_agg_type_obj(extra_types, path, at.as_ref()),
+        (Some(ValueSchema::AggColl(at)), None) => generate_agg_type_coll(types, path, at.as_ref()),
+        (Some(ValueSchema::AggObj(at)), None) => generate_agg_type_obj(types, path, at.as_ref()),
         (None, Some(x)) => match x.nesting_mode {
             super::sourceschema::NestingMode::List => {
                 let (element_type, element_ref_type) =
-                    generate_agg_type_obj_nested(extra_types, path, &x.attributes);
+                    generate_agg_type_obj_nested(types, path, &x.attributes);
                 (
                     quote!(std::vec::Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(terrars:: ListRef), quote!(terrars:: ListRef < #r2 >))),
@@ -274,7 +281,7 @@ fn generate_type(
             },
             super::sourceschema::NestingMode::Set => {
                 let (element_type, element_ref_type) =
-                    generate_agg_type_obj_nested(extra_types, path, &x.attributes);
+                    generate_agg_type_obj_nested(types, path, &x.attributes);
                 (
                     quote!(std::vec::Vec < #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(terrars:: SetRef), quote!(terrars:: SetRef < #r2 >))),
@@ -282,12 +289,12 @@ fn generate_type(
             },
             super::sourceschema::NestingMode::Single | super::sourceschema::NestingMode::Group => {
                 let (element_type, element_ref_type) =
-                    generate_agg_type_obj_nested(extra_types, path, &x.attributes);
+                    generate_agg_type_obj_nested(types, path, &x.attributes);
                 (element_type, element_ref_type)
             },
             super::sourceschema::NestingMode::Map => {
                 let (element_type, element_ref_type) =
-                    generate_agg_type_obj_nested(extra_types, path, &x.attributes);
+                    generate_agg_type_obj_nested(types, path, &x.attributes);
                 (
                     quote!(std::collections::HashMap < std::string::String, #element_type >),
                     element_ref_type.map(|(_, r2)| (quote!(terrars:: RecRef), quote!(terrars:: RecRef < #r2 >))),
@@ -299,29 +306,29 @@ fn generate_type(
 }
 
 pub fn generate_agg_type_obj(
-    extra_types: &mut Vec<TokenStream>,
+    types: &mut NestedTypes,
     path: &Vec<String>,
     at: &AggObjType,
 ) -> (TokenStream, Option<(TokenStream, TokenStream)>) {
     let mut raw_fields = TopLevelFields::default();
-    generate_fields_from_valueschema_map(&mut raw_fields, &path, &at.1, false);
-    let (rust_type, rust_ref_type) = generate_nonident_rust_type(extra_types, path, raw_fields);
+    generate_fields_from_valueschema_map(types, &mut raw_fields, &path, &at.1, false);
+    let (rust_type, rust_ref_type) = generate_nonident_rust_type(types, path, raw_fields);
     (rust_type, Some((rust_ref_type.clone(), rust_ref_type)))
 }
 
 pub fn generate_agg_type_obj_nested(
-    extra_types: &mut Vec<TokenStream>,
+    types: &mut NestedTypes,
     path: &Vec<String>,
     at: &BTreeMap<String, Value>,
 ) -> (TokenStream, Option<(TokenStream, TokenStream)>) {
     let mut raw_fields = TopLevelFields::default();
-    generate_fields_from_value_map(&mut raw_fields, &path, &at, false);
-    let (rust_type, rust_ref_type) = generate_nonident_rust_type(extra_types, path, raw_fields);
+    generate_fields_from_value_map(types, &mut raw_fields, &path, &at, false);
+    let (rust_type, rust_ref_type) = generate_nonident_rust_type(types, path, raw_fields);
     (rust_type, Some((rust_ref_type.clone(), rust_ref_type)))
 }
 
 fn generate_agg_type_coll(
-    extra_types: &mut Vec<TokenStream>,
+    types: &mut NestedTypes,
     path: &Vec<String>,
     at: &AggCollType,
 ) -> (TokenStream, Option<(TokenStream, TokenStream)>) {
@@ -329,8 +336,8 @@ fn generate_agg_type_coll(
         AggCollTypeKey::List => {
             let (element_type, element_ref_type) = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
-                ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, path, a.as_ref()),
-                ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, path, a.as_ref()),
+                ValueSchema::AggColl(a) => generate_agg_type_coll(types, path, a.as_ref()),
+                ValueSchema::AggObj(a) => generate_agg_type_obj(types, path, a.as_ref()),
             };
             (
                 quote!(terrars:: ListField < #element_type >),
@@ -340,8 +347,8 @@ fn generate_agg_type_coll(
         AggCollTypeKey::Set => {
             let (element_type, element_ref_type) = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
-                ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, path, a.as_ref()),
-                ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, path, a.as_ref()),
+                ValueSchema::AggColl(a) => generate_agg_type_coll(types, path, a.as_ref()),
+                ValueSchema::AggObj(a) => generate_agg_type_obj(types, path, a.as_ref()),
             };
             (
                 quote!(terrars:: SetField < #element_type >),
@@ -351,8 +358,8 @@ fn generate_agg_type_coll(
         AggCollTypeKey::Rec => {
             let (element_type, element_ref_type) = match &at.1 {
                 ValueSchema::Simple(t) => generate_simple_type(&t),
-                ValueSchema::AggColl(a) => generate_agg_type_coll(extra_types, path, a.as_ref()),
-                ValueSchema::AggObj(a) => generate_agg_type_obj(extra_types, path, a.as_ref()),
+                ValueSchema::AggColl(a) => generate_agg_type_coll(types, path, a.as_ref()),
+                ValueSchema::AggObj(a) => generate_agg_type_obj(types, path, a.as_ref()),
             };
             (
                 quote!(terrars:: RecField < #element_type >),
@@ -362,18 +369,15 @@ fn generate_agg_type_coll(
     }
 }
 
-fn generate_block_agg_obj(
-    superout: &mut TopLevelFields,
-    path: &Vec<String>,
-    obj: &Block,
-) -> (TokenStream, TokenStream) {
+fn generate_block_agg_obj(types: &mut NestedTypes, path: &Vec<String>, obj: &Block) -> (TokenStream, TokenStream) {
     let mut raw_fields = TopLevelFields::default();
-    generate_fields_from_value_map(&mut raw_fields, &path, &obj.attributes, false);
-    generate_block_fields(&mut raw_fields, &path, &obj.block_types, false);
-    generate_nonident_rust_type(&mut superout.extra_types, path, raw_fields)
+    generate_fields_from_value_map(types, &mut raw_fields, &path, &obj.attributes, false);
+    generate_block_fields(types, &mut raw_fields, &path, &obj.block_types, false);
+    generate_nonident_rust_type(types, path, raw_fields)
 }
 
 pub fn generate_block_fields(
+    types: &mut NestedTypes,
     out: &mut TopLevelFields,
     path: &Vec<String>,
     fields: &BTreeMap<String, NestedBlock>,
@@ -388,27 +392,27 @@ pub fn generate_block_fields(
         match v.nesting_mode {
             NestingMode::List => {
                 let (element_type, element_ref_type) =
-                    generate_block_agg_obj(out, &path, &v.block);
+                    generate_block_agg_obj(types, &path, &v.block);
                 rust_type = quote!(std::vec::Vec < #element_type >);
                 rust_ref_type = Some((quote!(terrars:: ListRef), quote!(terrars:: ListRef < #element_ref_type >)));
                 block_type = Some(element_type);
             },
             NestingMode::Set => {
-                let (element_type, _) = generate_block_agg_obj(out, &path, &v.block);
+                let (element_type, _) = generate_block_agg_obj(types, &path, &v.block);
                 rust_type = quote!(std::vec::Vec < #element_type >);
                 rust_ref_type = None;
                 block_type = Some(element_type);
             },
             NestingMode::Single | NestingMode::Group => {
                 let (element_type, element_ref_type) =
-                    generate_block_agg_obj(out, &path, &v.block);
+                    generate_block_agg_obj(types, &path, &v.block);
                 rust_type = element_type;
                 rust_ref_type = Some((element_ref_type.clone(), element_ref_type));
                 block_type = None;
             },
             NestingMode::Map => {
                 let (element_type, element_ref_type) =
-                    generate_block_agg_obj(out, &path, &v.block);
+                    generate_block_agg_obj(types, &path, &v.block);
                 rust_type = quote!(std::collections::HashMap < std::string::String, #element_type >);
                 rust_ref_type = Some((quote!(terrars:: RecRef), quote!(terrars:: RecRef < #element_ref_type >)));
                 block_type = None;
@@ -428,6 +432,7 @@ pub fn generate_block_fields(
 }
 
 pub fn generate_fields_from_value_map(
+    types: &mut NestedTypes,
     out: &mut TopLevelFields,
     path: &Vec<String>,
     fields: &BTreeMap<String, Value>,
@@ -437,7 +442,7 @@ pub fn generate_fields_from_value_map(
         let mut path = path.clone();
         path.push(k.clone());
         let (rust_field_type, rust_field_ref_type) =
-            generate_type(&mut out.extra_types, &path, (v.r#type.as_ref(), v.nested_type.as_ref()));
+            generate_type(types, &path, (v.r#type.as_ref(), v.nested_type.as_ref()));
         generate_field(
             out,
             k,
@@ -452,6 +457,7 @@ pub fn generate_fields_from_value_map(
 }
 
 pub fn generate_fields_from_valueschema_map(
+    types: &mut NestedTypes,
     out: &mut TopLevelFields,
     path: &Vec<String>,
     fields: &BTreeMap<String, ValueSchema>,
@@ -460,7 +466,7 @@ pub fn generate_fields_from_valueschema_map(
     for (k, v) in fields {
         let mut path = path.clone();
         path.push(k.clone());
-        let (rust_field_type, rust_field_ref_type) = generate_type(&mut out.extra_types, &path, (Some(v), None));
+        let (rust_field_type, rust_field_ref_type) = generate_type(types, &path, (Some(v), None));
         generate_field(
             out,
             k,
@@ -474,67 +480,156 @@ pub fn generate_fields_from_valueschema_map(
     }
 }
 
+
+const PLACEHOLDER_PREFIX: &str = "TerrarsNested";
+
+fn placeholder(id: usize) -> String {
+    format!("{}{}_", PLACEHOLDER_PREFIX, id)
+}
+
+/// Nested (non-identity) types for one output file, deduplicated by structure. Deep
+/// schemas (ex: wafv2 statements) repeat the same blocks at many paths, and generating a
+/// type per path blows up the output.
+///
+/// Types are generated with placeholder names since the final name (the shortest path
+/// with that shape) isn't known until everything's generated. `resolve` replaces them.
+#[derive(Default)]
+pub struct NestedTypes {
+    by_shape: HashMap<String, usize>,
+    names: Vec<String>,
+    types: Vec<TokenStream>,
+}
+
+impl NestedTypes {
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty()
+    }
+
+    /// Only blocks with the same name are merged, otherwise unrelated blocks that happen to
+    /// have the same fields end up sharing a misleading name.
+    fn add(&mut self, path: &[String], render: impl Fn(&str) -> TokenStream) -> String {
+        let camel_name = path_camel(path);
+        let shape =
+            format!(
+                "{}\n{}",
+                path.last().map(String::as_str).unwrap_or(""),
+                render(&format!("{}Self_", PLACEHOLDER_PREFIX))
+            );
+        match self.by_shape.entry(shape) {
+            Entry::Occupied(e) => {
+                let id = *e.get();
+                let name = &mut self.names[id];
+                if (camel_name.len(), &camel_name) < (name.len(), name) {
+                    *name = camel_name;
+                }
+                placeholder(id)
+            },
+            Entry::Vacant(e) => {
+                let id = self.types.len();
+                e.insert(id);
+                self.names.push(camel_name);
+                self.types.push(render(&placeholder(id)));
+                placeholder(id)
+            },
+        }
+    }
+
+    fn resolve_ident(&self, i: &str) -> Option<String> {
+        let start = i.find(PLACEHOLDER_PREFIX)?;
+        let rest = &i[start + PLACEHOLDER_PREFIX.len()..];
+        let digits = rest.find(|c: char| !c.is_ascii_digit())?;
+        let id: usize = rest[..digits].parse().ok()?;
+        let suffix = rest[digits..].strip_prefix("_")?;
+        Some(format!("{}{}{}", &i[..start], self.names[id], suffix))
+    }
+
+    /// Replace placeholder names in generated code with the final names.
+    pub fn resolve(&self, tokens: TokenStream) -> TokenStream {
+        tokens.into_iter().map(|t| match t {
+            TokenTree::Group(g) => {
+                let mut out = Group::new(g.delimiter(), self.resolve(g.stream()));
+                out.set_span(g.span());
+                TokenTree::Group(out)
+            },
+            TokenTree::Ident(i) => match self.resolve_ident(&i.to_string()) {
+                Some(name) => TokenTree::Ident(Ident::new(&name, i.span())),
+                None => TokenTree::Ident(i),
+            },
+            t => t,
+        }).collect()
+    }
+
+    /// The generated type definitions, with final names.
+    pub fn finish(self) -> Vec<TokenStream> {
+        self.types.iter().map(|t| self.resolve(t.clone())).collect()
+    }
+}
+
 pub fn generate_nonident_rust_type(
-    extra_types: &mut Vec<TokenStream>,
+    types: &mut NestedTypes,
     path: &Vec<String>,
-    mut raw_fields: TopLevelFields,
+    raw_fields: TopLevelFields,
 ) -> (TokenStream, TokenStream) {
-    let camel_name = path_camel(&path);
-    raw_fields.finish(&camel_name);
-    let builder_fields = raw_fields.builder_fields;
-    let copy_builder_fields = raw_fields.copy_builder_fields;
-    extra_types.extend(raw_fields.extra_types);
-    let resource_fields = raw_fields.fields;
-    let resource_mut_methods = raw_fields.mut_methods;
-    let ref_ref_methods = raw_fields.ref_ref_methods;
-    let obj_ident = format_ident!("{}", camel_name);
-    let obj_builder_ident = format_ident!("Build{}", camel_name);
-    let obj_ref_ident = format_ident!("{}Ref", camel_name);
-    extra_types.push(quote!{
-        #[derive(Serialize)] pub struct #obj_ident {
-            #(#resource_fields,) *
-        }
-        impl #obj_ident {
-            #(#resource_mut_methods) *
-        }
-        impl terrars::ToListMappable for #obj_ident {
-            type O = terrars::BlockAssignable < #obj_ident >;
-            fn do_map(self, base: std::string::String) -> Self::O {
-                terrars::BlockAssignable::Dynamic(terrars::DynamicBlock {
-                    for_each: format!("${{{}}}", base),
-                    iterator: "each".into(),
-                    content: self,
-                })
+    let name = types.add(&path, |camel_name| {
+        let mut raw_fields = raw_fields.clone();
+        raw_fields.finish(camel_name);
+        let extra_types = raw_fields.extra_types;
+        let builder_fields = raw_fields.builder_fields;
+        let copy_builder_fields = raw_fields.copy_builder_fields;
+        let resource_fields = raw_fields.fields;
+        let resource_mut_methods = raw_fields.mut_methods;
+        let ref_ref_methods = raw_fields.ref_ref_methods;
+        let obj_ident = format_ident!("{}", camel_name);
+        let obj_builder_ident = format_ident!("Build{}", camel_name);
+        let obj_ref_ident = format_ident!("{}Ref", camel_name);
+        quote!{
+            #(#extra_types) * #[derive(Serialize)] pub struct #obj_ident {
+                #(#resource_fields,) *
             }
-        }
-        pub struct #obj_builder_ident {
-            #(#builder_fields,) *
-        }
-        impl #obj_builder_ident {
-            pub fn build(self) -> #obj_ident {
-                #obj_ident {
-                    #(#copy_builder_fields,) *
+            impl #obj_ident {
+                #(#resource_mut_methods) *
+            }
+            impl terrars::ToListMappable for #obj_ident {
+                type O = terrars::BlockAssignable < #obj_ident >;
+                fn do_map(self, base: std::string::String) -> Self::O {
+                    terrars::BlockAssignable::Dynamic(terrars::DynamicBlock {
+                        for_each: format!("${{{}}}", base),
+                        iterator: "each".into(),
+                        content: self,
+                    })
                 }
             }
-        }
-        #[allow(dead_code)] pub struct #obj_ref_ident {
-            shared: terrars::StackShared,
-            base: std::string::String
-        }
-        impl terrars::Ref for #obj_ref_ident {
-            fn new(shared: terrars::StackShared, base: std::string::String) -> #obj_ref_ident {
-                #obj_ref_ident {
-                    shared: shared,
-                    base: base.to_string(),
+            pub struct #obj_builder_ident {
+                #(#builder_fields,) *
+            }
+            impl #obj_builder_ident {
+                pub fn build(self) -> #obj_ident {
+                    #obj_ident {
+                        #(#copy_builder_fields,) *
+                    }
                 }
             }
-        }
-        impl #obj_ref_ident {
-            #[allow(dead_code)] fn shared(&self) -> &terrars::StackShared {
-                &self.shared
+            #[allow(dead_code)] pub struct #obj_ref_ident {
+                shared: terrars::StackShared,
+                base: std::string::String
             }
-            #(#ref_ref_methods) *
+            impl terrars::Ref for #obj_ref_ident {
+                fn new(shared: terrars::StackShared, base: std::string::String) -> #obj_ref_ident {
+                    #obj_ref_ident {
+                        shared: shared,
+                        base: base.to_string(),
+                    }
+                }
+            }
+            impl #obj_ref_ident {
+                #[allow(dead_code)] fn shared(&self) -> &terrars::StackShared {
+                    &self.shared
+                }
+                #(#ref_ref_methods) *
+            }
         }
     });
+    let obj_ident = format_ident!("{}", name);
+    let obj_ref_ident = format_ident!("{}Ref", name);
     (quote!(#obj_ident), quote!(#obj_ref_ident))
 }
